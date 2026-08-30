@@ -1,6 +1,6 @@
 <div align="center">
   <h1>Orca Mini</h1>
-  <p>A fast, stripped-down WebKit browser for Apple silicon Macs.</p>
+  <p><strong>Just 8 MB.</strong> A fast, stripped-down WebKit browser for Apple silicon Macs.</p>
 </div>
 
 <p align="center">
@@ -41,7 +41,7 @@ The browser uses the WebKit framework built into macOS. It does not bundle or ma
 
 ## Install
 
-Apple-silicon DMGs are published on the [Releases](https://github.com/srijanshukla18/orca-mini/releases) page and named `Orca-Mini-<version>-arm64.dmg`.
+**The complete Orca Mini DMG is just 8 MB.** Apple-silicon downloads are published on the [Releases](https://github.com/srijanshukla18/orca-mini/releases) page and named `Orca-Mini-<version>-arm64.dmg`.
 
 Current releases are unsigned. After copying Orca Mini to Applications, right-click it and choose **Open**, then confirm **Open**. A future Developer ID build may remove this Gatekeeper confirmation, but the browser does not require an Apple developer account to build or use.
 
