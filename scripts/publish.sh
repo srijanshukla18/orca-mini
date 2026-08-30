@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_common.sh"
 
-REPO="${ORCA_GITHUB_REPOSITORY:-srijanshukla18/browser}"
+REPO="${ORCA_GITHUB_REPOSITORY:-srijanshukla18/orca-mini}"
 
 VERSION=$(grep "MARKETING_VERSION:" project.yml | sed 's/.*MARKETING_VERSION: //' | tr -d ' ')
 DMG_NAME="Orca-Mini-${VERSION}-arm64.dmg"

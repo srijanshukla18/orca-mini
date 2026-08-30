@@ -10,7 +10,7 @@ Do not open a public issue for an unpatched vulnerability or include exploit det
 
 Use GitHub's private vulnerability reporting form:
 
-<https://github.com/srijanshukla18/browser/security/advisories/new>
+<https://github.com/srijanshukla18/orca-mini/security/advisories/new>
 
 Include, when possible:
 

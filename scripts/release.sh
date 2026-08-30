@@ -126,7 +126,7 @@ sed -i '' "s/CURRENT_PROJECT_VERSION: .*/CURRENT_PROJECT_VERSION: $BUILD_VERSION
 # ---------------------------------------------------------------------------
 
 DMG_NAME="Orca-Mini-${VERSION}-arm64.dmg"
-REPO="${ORCA_GITHUB_REPOSITORY:-srijanshukla18/browser}"
+REPO="${ORCA_GITHUB_REPOSITORY:-srijanshukla18/orca-mini}"
 echo ""
 green "========================================"
 green "  Release v${VERSION} published!"

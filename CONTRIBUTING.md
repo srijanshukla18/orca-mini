@@ -18,7 +18,7 @@ Orca Mini is intentionally small. Contributions should improve browsing, compati
 ## Setup
 
 ```bash
-git clone https://github.com/srijanshukla18/browser.git
+git clone https://github.com/srijanshukla18/orca-mini.git
 cd browser
 ./scripts/setup.sh
 open Ora.xcodeproj

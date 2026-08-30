@@ -8,7 +8,7 @@ This document covers public Apple-silicon releases. Contributors who only need a
 - Apple Developer ID Application certificate
 - Developer ID provisioning profile for the application bundle ID
 - A configured `notarytool` keychain profile
-- Authenticated GitHub CLI access to `srijanshukla18/browser`
+- Authenticated GitHub CLI access to `srijanshukla18/orca-mini`
 - `xcodegen`, `create-dmg`, `xcbeautify`, and `gh`
 
 Copy `.env.example` to `.env` and fill in the local values. Never commit `.env`, certificates, profiles, passwords, or notarization output containing account data.
@@ -64,7 +64,7 @@ Every distributed DMG must correspond to the source at its release tag. Before a
 ## Post-release verification
 
 ```bash
-gh release view "v0.2.15" --repo srijanshukla18/browser
+gh release view "v0.2.15" --repo srijanshukla18/orca-mini
 hdiutil verify "build/Orca-Mini-0.2.15-arm64.dmg"
 (cd build && shasum -a 256 -c "Orca-Mini-0.2.15-arm64.dmg.sha256")
 codesign --verify --deep --strict --verbose=2 "build/Orca Mini.app"

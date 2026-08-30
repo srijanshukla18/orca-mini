@@ -222,7 +222,7 @@ struct OraCommands: Commands {
     }
 
     private func openProjectPage(_ path: String) {
-        guard let url = URL(string: "https://github.com/srijanshukla18/browser\(path)") else { return }
+        guard let url = URL(string: "https://github.com/srijanshukla18/orca-mini\(path)") else { return }
         NSWorkspace.shared.open(url)
     }
 

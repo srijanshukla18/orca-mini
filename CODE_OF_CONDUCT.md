@@ -24,7 +24,7 @@ We are committed to a welcoming, respectful, and inclusive environment for every
 
 This code applies to repository issues, pull requests, discussions, reviews, and other spaces officially associated with Orca Mini. Maintainers may edit or remove content, close contributions, issue warnings, or restrict participation when necessary.
 
-For a sensitive conduct report, use the repository's [private reporting form](https://github.com/srijanshukla18/browser/security/advisories/new) and prefix the title with `[Conduct]`. Do not publish sensitive details in an issue.
+For a sensitive conduct report, use the repository's [private reporting form](https://github.com/srijanshukla18/orca-mini/security/advisories/new) and prefix the title with `[Conduct]`. Do not publish sensitive details in an issue.
 
 ## Attribution
 

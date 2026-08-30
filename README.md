@@ -41,7 +41,7 @@ The browser uses the WebKit framework built into macOS. It does not bundle or ma
 
 ## Install
 
-Signed and notarized builds will be published on the [Releases](https://github.com/srijanshukla18/browser/releases) page. Release artifacts are Apple-silicon-only DMGs named `Orca-Mini-<version>-arm64.dmg`.
+Signed and notarized builds will be published on the [Releases](https://github.com/srijanshukla18/orca-mini/releases) page. Release artifacts are Apple-silicon-only DMGs named `Orca-Mini-<version>-arm64.dmg`.
 
 Locally generated DMGs are ad-hoc signed for development and are not a substitute for a notarized public release.
 
@@ -54,7 +54,7 @@ Requirements:
 - [Homebrew](https://brew.sh/)
 
 ```bash
-git clone https://github.com/srijanshukla18/browser.git
+git clone https://github.com/srijanshukla18/orca-mini.git
 cd browser
 ./scripts/setup.sh
 ./scripts/build-local.sh
