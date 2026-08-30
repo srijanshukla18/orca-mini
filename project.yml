@@ -120,8 +120,8 @@ targets:
         ARCHS: arm64
         SWIFT_VERSION: 5.9
         CODE_SIGN_STYLE: Automatic
-        MARKETING_VERSION: 0.2.14
-        CURRENT_PROJECT_VERSION: 105
+        MARKETING_VERSION: 0.2.15
+        CURRENT_PROJECT_VERSION: 106
         PRODUCT_NAME: "Orca Mini"
         PRODUCT_MODULE_NAME: Ora
         PRODUCT_BUNDLE_IDENTIFIER: com.orabrowser.app

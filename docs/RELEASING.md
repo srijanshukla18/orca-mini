@@ -1,6 +1,18 @@
 # Releasing Orca Mini
 
-This document covers public Apple-silicon releases. Contributors who only need a local installer should run `./scripts/build-local.sh` instead.
+This document covers public Apple-silicon releases. Orca Mini supports unsigned community releases and optional Developer ID signed and notarized releases.
+
+## Unsigned release
+
+Unsigned releases require a clean `main` branch, an authenticated GitHub CLI, and the local build requirements from the README.
+
+1. Update `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml`, then commit and push the version change.
+2. Run `./scripts/build-local.sh`.
+3. Verify the app contains `LICENSE` and `THIRD_PARTY_NOTICES.md`, the executable is arm64-only, and the DMG passes `hdiutil verify`.
+4. Tag the exact source commit and publish the DMG plus its SHA-256 checksum on GitHub.
+5. Label the release unsigned and include the right-click **Open** Gatekeeper instructions.
+
+## Signed and notarized release
 
 ## Release requirements
 
