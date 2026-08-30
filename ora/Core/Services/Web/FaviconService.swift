@@ -118,7 +118,7 @@ final class FaviconService: ObservableObject {
             await MainActor.run {
                 self.completeFetch(
                     for: domain,
-                    favicon: payload?.image,
+                    favicon: payload.flatMap { NSImage(data: $0.data) },
                     sourceURL: payload?.sourceURL
                 )
             }
@@ -143,7 +143,7 @@ final class FaviconService: ObservableObject {
         }
     }
 
-    private func fetchFaviconPayload(for domain: String) async -> (image: NSImage, data: Data, sourceURL: URL)? {
+    private func fetchFaviconPayload(for domain: String) async -> (data: Data, sourceURL: URL)? {
         guard let siteURL = canonicalURL(for: domain) else { return nil }
 
         do {
@@ -152,19 +152,19 @@ final class FaviconService: ObservableObject {
                 .download()
                 .largest()
             guard let faviconImage = favicon.image else { return nil }
-            if let downsampled = Self.downsampledPNG(from: faviconImage.data, maxPixelSize: 64) {
-                return (downsampled.image, downsampled.data, favicon.url.source)
+            if let downsampledData = Self.downsampledPNGData(from: faviconImage.data, maxPixelSize: 64) {
+                return (downsampledData, favicon.url.source)
             }
-            return (faviconImage.image, faviconImage.data, favicon.url.source)
+            return (faviconImage.data, favicon.url.source)
         } catch {
             return nil
         }
     }
 
-    private static func downsampledPNG(
+    private static func downsampledPNGData(
         from data: Data,
         maxPixelSize: Int
-    ) -> (image: NSImage, data: Data)? {
+    ) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let cgImage = CGImageSourceCreateThumbnailAtIndex(
                   source,
@@ -182,11 +182,7 @@ final class FaviconService: ObservableObject {
             return nil
         }
 
-        let image = NSImage(
-            cgImage: cgImage,
-            size: NSSize(width: cgImage.width, height: cgImage.height)
-        )
-        return (image, pngData)
+        return pngData
     }
 
     func downloadAndSaveFavicon(
