@@ -1,40 +1,33 @@
 #!/bin/bash
 set -euo pipefail
 
-# publish.sh — Generate changelogs, build the Sparkle appcast, create a GitHub
-# release, and deploy the feed.
+# publish.sh — Generate a changelog and create a GitHub release.
 #
 # Usage: ./scripts/publish.sh
 #
-# Expects build/Ora-Browser-<version>.dmg to exist (run build.sh first).
-# Reads version from project.yml. Expects .env with: ORA_PRIVATE_KEY
+# Expects build/Orca-Mini-<version>-arm64.dmg to exist (run build.sh first).
+# Reads version from project.yml.
 # Optional changelog env vars:
-#   ORA_CHANGELOG_MODEL   Override the Codex model used for changelog rewriting
-#   ORA_CHANGELOG_REVIEW  Set to 1 to open generated notes in $EDITOR
-#   ORA_CHANGELOG_NO_LLM  Set to 1 to force deterministic fallback notes
+#   ORCA_CHANGELOG_MODEL   Override the Codex model used for changelog rewriting
+#   ORCA_CHANGELOG_REVIEW  Set to 1 to open generated notes in $EDITOR
+#   ORCA_CHANGELOG_NO_LLM  Set to 1 to force deterministic fallback notes
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_common.sh"
 
-REPO="the-ora/browser"
-
-load_env ORA_PRIVATE_KEY
+REPO="${ORCA_GITHUB_REPOSITORY:-srijanshukla18/browser}"
 
 VERSION=$(grep "MARKETING_VERSION:" project.yml | sed 's/.*MARKETING_VERSION: //' | tr -d ' ')
-DMG_NAME="Ora-Browser-${VERSION}.dmg"
+DMG_NAME="Orca-Mini-${VERSION}-arm64.dmg"
 DMG_FILE="build/${DMG_NAME}"
-SPARKLE_ARCHIVES_DIR="build/sparkle"
+CHECKSUM_FILE="${DMG_FILE}.sha256"
 CHANGELOG_DIR="build/release-notes"
-CHANGELOG_FILE="${CHANGELOG_DIR}/Ora-Browser-${VERSION}.md"
-RELEASE_NOTES_FILE="${SPARKLE_ARCHIVES_DIR}/Ora-Browser-${VERSION}.html"
-APPCAST_FILE="${SPARKLE_ARCHIVES_DIR}/appcast.xml"
+CHANGELOG_FILE="${CHANGELOG_DIR}/Orca-Mini-${VERSION}.md"
 
 [[ -f "$DMG_FILE" ]] || die "DMG not found at $DMG_FILE. Run ./scripts/build.sh first."
 
-rm -rf "$SPARKLE_ARCHIVES_DIR"
 rm -rf "$CHANGELOG_DIR"
 mkdir -p "$CHANGELOG_DIR"
-mkdir -p "$SPARKLE_ARCHIVES_DIR"
 
 # --- Changelog generation ---
 
@@ -49,39 +42,23 @@ CHANGELOG_ARGS=(
     "v$VERSION"
     "$REPO"
     --output-markdown "$CHANGELOG_FILE"
-    --output-html "$RELEASE_NOTES_FILE"
 )
 
-[[ "${ORA_CHANGELOG_REVIEW:-0}" == "1" ]] && CHANGELOG_ARGS+=(--review)
-[[ "${ORA_CHANGELOG_NO_LLM:-0}" == "1" ]] && CHANGELOG_ARGS+=(--no-llm)
+[[ "${ORCA_CHANGELOG_REVIEW:-0}" == "1" ]] && CHANGELOG_ARGS+=(--review)
+[[ "${ORCA_CHANGELOG_NO_LLM:-0}" == "1" ]] && CHANGELOG_ARGS+=(--no-llm)
 
 python3 "${CHANGELOG_ARGS[@]}"
 
-# --- Sparkle appcast ---
-
-step "Sparkle appcast"
-
-setup_sparkle_tools || prime_sparkle_tools_from_xcode || die "generate_appcast not found. Install Sparkle with: brew install --cask sparkle or resolve package dependencies with xcodebuild."
-
-cp "$DMG_FILE" "$SPARKLE_ARCHIVES_DIR/"
-[[ -f appcast.xml ]] && cp appcast.xml "$APPCAST_FILE"
-
-printf '%s' "$ORA_PRIVATE_KEY" | generate_appcast \
-    --ed-key-file - \
-    --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
-    --full-release-notes-url "https://github.com/$REPO/releases/tag/v$VERSION" \
-    --link "https://github.com/$REPO" \
-    --embed-release-notes \
-    "$SPARKLE_ARCHIVES_DIR"
-
-[[ -f "$APPCAST_FILE" ]] || die "Appcast generation failed."
-cp "$APPCAST_FILE" appcast.xml
+(
+    cd build
+    shasum -a 256 "$DMG_NAME" > "${DMG_NAME}.sha256"
+)
 
 # --- Commit & push ---
 
 step "Committing & pushing"
 
-git add project.yml appcast.xml
+git add project.yml
 git commit -m "chore(release): v$VERSION"
 git push origin main
 
@@ -94,9 +71,9 @@ if gh release view "v$VERSION" --repo "$REPO" >/dev/null 2>&1; then
         --repo "$REPO" \
         --title "v$VERSION" \
         --notes-file "$CHANGELOG_FILE"
-    gh release upload "v$VERSION" "$DMG_FILE" --repo "$REPO" --clobber
+    gh release upload "v$VERSION" "$DMG_FILE" "$CHECKSUM_FILE" --repo "$REPO" --clobber
 else
-    gh release create "v$VERSION" "$DMG_FILE" \
+    gh release create "v$VERSION" "$DMG_FILE" "$CHECKSUM_FILE" \
         --repo "$REPO" \
         --title "v$VERSION" \
         --notes-file "$CHANGELOG_FILE"
@@ -104,42 +81,4 @@ fi
 
 echo "Release: https://github.com/$REPO/releases/tag/v$VERSION"
 
-# --- Deploy appcast to gh-pages ---
-
-step "Deploying appcast"
-
-cp appcast.xml /tmp/ora_appcast_deploy.xml
-CURRENT_BRANCH=$(git branch --show-current)
-
-STASH_CREATED=false
-STASH_BEFORE="$(git rev-parse -q --verify refs/stash 2>/dev/null || true)"
-git stash push -m "Stash before deploying appcast v$VERSION" >/dev/null 2>&1 || true
-STASH_AFTER="$(git rev-parse -q --verify refs/stash 2>/dev/null || true)"
-
-if [[ -n "$STASH_AFTER" && "$STASH_AFTER" != "$STASH_BEFORE" ]]; then
-    STASH_CREATED=true
-fi
-
-if git ls-remote --heads origin gh-pages | grep -q gh-pages; then
-    git fetch origin gh-pages
-    git checkout gh-pages
-else
-    git checkout --orphan gh-pages
-    git rm -rf .
-    echo "# Ora Browser Updates" > README.md
-    git add README.md
-    git commit -m "chore(appcast): initialize gh-pages"
-fi
-
-cp /tmp/ora_appcast_deploy.xml appcast.xml
-rm -f /tmp/ora_appcast_deploy.xml
-git add -f appcast.xml
-git diff --staged --quiet || git commit -m "chore(appcast): deploy v$VERSION"
-git push origin gh-pages
-
-git checkout "$CURRENT_BRANCH"
-if [[ "$STASH_CREATED" == true ]]; then
-    git stash pop 2>/dev/null || true
-fi
-
-green "Published! Appcast: https://the-ora.github.io/browser/appcast.xml"
+green "Published!"

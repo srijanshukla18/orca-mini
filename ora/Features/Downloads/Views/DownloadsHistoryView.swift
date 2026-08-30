@@ -86,7 +86,7 @@ struct DownloadsHistoryView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("Spaces")
+                    Text("Tabs")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundColor(theme.foreground.opacity(0.7))

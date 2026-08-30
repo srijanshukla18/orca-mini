@@ -44,3 +44,4 @@ echo "Xcode project generated."
 
 echo ""
 echo "Setup complete."
+echo "Run ./scripts/build-local.sh for an ad-hoc-signed Apple-silicon DMG."

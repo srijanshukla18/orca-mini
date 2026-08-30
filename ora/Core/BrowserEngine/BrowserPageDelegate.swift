@@ -8,8 +8,8 @@ protocol BrowserPageDelegate: AnyObject {
     ) -> BrowserNavigationActionDisposition
     func browserPage(_ page: BrowserPage, didRequestOpenInNewTab url: URL)
     func browserPage(_ page: BrowserPage, didUpdateNavigation event: BrowserNavigationEvent)
+    func browserPage(_ page: BrowserPage, didUpdateDocumentMetadata metadata: BrowserDocumentMetadata)
     func browserPage(_ page: BrowserPage, didFailNavigationWith error: Error, failingURL: URL?)
-    func browserPage(_ page: BrowserPage, didReceiveScriptMessage message: BrowserScriptMessage)
     func browserPage(
         _ page: BrowserPage,
         requestPermission permission: BrowserPermissionKind,
@@ -44,9 +44,9 @@ extension BrowserPageDelegate {
 
     func browserPage(_ page: BrowserPage, didUpdateNavigation event: BrowserNavigationEvent) {}
 
-    func browserPage(_ page: BrowserPage, didFailNavigationWith error: Error, failingURL: URL?) {}
+    func browserPage(_ page: BrowserPage, didUpdateDocumentMetadata metadata: BrowserDocumentMetadata) {}
 
-    func browserPage(_ page: BrowserPage, didReceiveScriptMessage message: BrowserScriptMessage) {}
+    func browserPage(_ page: BrowserPage, didFailNavigationWith error: Error, failingURL: URL?) {}
 
     func browserPage(
         _ page: BrowserPage,

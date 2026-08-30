@@ -24,8 +24,7 @@ class HistoryManager: ObservableObject {
         let urlString = url.absoluteString
         let containerId = container.id
 
-        // Keep history entries scoped to a space so visits from different spaces
-        // do not overwrite each other or become unreachable from space filters.
+        // The internal profile ID preserves compatibility with existing history data.
         let descriptor = FetchDescriptor<History>(
             predicate: #Predicate { history in
                 history.urlString == urlString && history.container?.id == containerId

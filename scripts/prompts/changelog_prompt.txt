@@ -1,4 +1,4 @@
-You are generating release notes for the Ora browser.
+You are generating release notes for the Orca Mini browser.
 
 Context:
 - Release title: ${release_title}
@@ -10,11 +10,10 @@ Context:
 Input pull requests:
 ${pr_json}
 
-Write two outputs:
-1. `markdown`: full GitHub Release notes in Markdown
-2. `html`: shorter Sparkle release notes in simple HTML
+Write one output:
+- `markdown`: full GitHub Release notes in Markdown
 
-Requirements for both outputs:
+Requirements:
 - Write for normal users, not developers.
 - Focus on visible user value.
 - Keep wording honest and concise.
@@ -50,21 +49,9 @@ Markdown rules:
 - Inline attribution format:
   `*(by [@user](https://github.com/user) in [#123](https://github.com/owner/repo/pull/123))*`
 
-Sparkle HTML rules:
-- Keep it shorter than the Markdown version.
-- Use only:
-  - `Highlights`
-  - `Improvements`
-- Fold fixes into Improvements.
-- Do not include an "Under the hood" section.
-- Use simple HTML only: `h2`, `h3`, `ul`, `li`, `p`, `strong`, `em`, `a`
-- Keep inline attribution in each item.
-- Include a final "Full Changelog" link to `${compare_url}`.
-
 Return only valid JSON in this exact shape:
 {
-  "markdown": "full markdown changelog here",
-  "html": "full html changelog here"
+  "markdown": "full markdown changelog here"
 }
 
 Do not wrap the JSON in code fences.

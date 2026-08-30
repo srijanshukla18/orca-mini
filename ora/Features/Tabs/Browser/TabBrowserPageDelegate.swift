@@ -1,12 +1,10 @@
 import AppKit
-import SwiftUI
 
 final class TabBrowserPageDelegate: BrowserPageDelegate {
     weak var tab: Tab?
-    weak var mediaController: MediaController?
-    weak var passwordCoordinator: PasswordAutofillCoordinator?
 
     private var progressResetWorkItem: DispatchWorkItem?
+    private var lastRecordedURL: URL?
 
     func browserPage(
         _ page: BrowserPage,
@@ -58,8 +56,6 @@ final class TabBrowserPageDelegate: BrowserPageDelegate {
         case .started:
             progressResetWorkItem?.cancel()
             tab.clearNavigationError()
-            tab.maintainSnapShots()
-            passwordCoordinator?.clearAutofillState()
             tab.isLoading = event.isLoading
             tab.loadingProgress = event.progress
             if let url = event.url {
@@ -71,9 +67,6 @@ final class TabBrowserPageDelegate: BrowserPageDelegate {
             tab.loadingProgress = event.progress
             if let title = event.title, !title.isEmpty {
                 tab.title = title
-                MainActor.assumeIsolated {
-                    mediaController?.syncTitleForTab(tab.id, newTitle: title)
-                }
             }
 
         case .finished:
@@ -81,17 +74,10 @@ final class TabBrowserPageDelegate: BrowserPageDelegate {
             tab.loadingProgress = event.progress
             if let title = event.title, !title.isEmpty {
                 tab.title = title
-                MainActor.assumeIsolated {
-                    mediaController?.syncTitleForTab(tab.id, newTitle: title)
-                }
             }
             if let url = event.url {
-                tab.url = url
-                if tab.favicon == nil {
-                    tab.setFavicon()
-                }
-                tab.updateHistory()
-                tab.updateHeaderColor()
+                updateTab(tab, url: url, title: event.title)
+                recordHistory(for: tab, url: url, force: true)
             }
 
             let workItem = DispatchWorkItem { [weak tab] in
@@ -102,28 +88,17 @@ final class TabBrowserPageDelegate: BrowserPageDelegate {
         }
     }
 
-    func browserPage(_ page: BrowserPage, didFailNavigationWith error: Error, failingURL: URL?) {
-        tab?.setNavigationError(error, for: failingURL)
-    }
-
-    func browserPage(_ page: BrowserPage, didReceiveScriptMessage message: BrowserScriptMessage) {
+    func browserPage(_ page: BrowserPage, didUpdateDocumentMetadata metadata: BrowserDocumentMetadata) {
         guard let tab else { return }
 
-        switch message.name {
-        case "listener":
-            handleURLUpdateMessage(message.body, for: tab)
-        case "linkHover":
-            let hovered = (message.body as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            tab.hoveredLinkURL = hovered.isEmpty ? nil : hovered
-        case "mediaEvent":
-            handleMediaEventMessage(message.body, for: tab)
-        case "passwordManager":
-            if let body = message.body as? String {
-                passwordCoordinator?.handleMessage(body, pageURL: page.currentURL)
-            }
-        default:
-            break
+        updateTab(tab, url: metadata.url, title: metadata.title)
+        if !page.isLoading, let url = metadata.url {
+            recordHistory(for: tab, url: url, force: false)
         }
+    }
+
+    func browserPage(_ page: BrowserPage, didFailNavigationWith error: Error, failingURL: URL?) {
+        tab?.setNavigationError(error, for: failingURL)
     }
 
     func browserPage(
@@ -206,85 +181,29 @@ final class TabBrowserPageDelegate: BrowserPageDelegate {
         }
     }
 
-    func takeSnapshotAfterLoad(_ page: BrowserPage) {
-        guard !page.isLoading, page.contentView.bounds.width > 0 else { return }
+    private func updateTab(_ tab: Tab, url: URL?, title: String?) {
+        if let title, !title.isEmpty {
+            tab.title = title
+        }
 
-        page.takeSnapshot(
-            configuration: BrowserSnapshotConfiguration(
-                rect: CGRect(x: 0, y: 0, width: page.contentView.bounds.width, height: 24),
-                afterScreenUpdates: false
-            )
-        ) { [weak self] image, error in
-            guard let self, let image, error == nil else { return }
-            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-
-            let color = self.extractDominantColor(from: cgImage) ?? .black
-            DispatchQueue.main.async {
-                self.tab?.updateBackgroundColor(Color(nsColor: color))
-                self.tab?.colorUpdated = true
+        guard let url else { return }
+        let previousHost = tab.url.host
+        tab.url = url
+        let localFaviconMissing = tab.faviconLocalFile.map {
+            !FileManager.default.fileExists(atPath: $0.path)
+        } ?? true
+        if tab.favicon == nil || previousHost != url.host || localFaviconMissing {
+            if previousHost != url.host {
+                tab.favicon = nil
+                tab.faviconLocalFile = nil
             }
+            tab.setFavicon()
         }
     }
 
-    private func handleURLUpdateMessage(_ body: Any?, for tab: Tab) {
-        guard let jsonString = body as? String,
-              let jsonData = jsonString.data(using: .utf8),
-              let update = try? JSONDecoder().decode(URLUpdate.self, from: jsonData)
-        else {
-            return
-        }
-
-        let oldTitle = tab.title
-        tab.title = update.title
-        tab.url = URL(string: update.href) ?? tab.url
-        tab.setFavicon()
+    private func recordHistory(for tab: Tab, url: URL, force: Bool) {
+        guard force || lastRecordedURL != url else { return }
+        lastRecordedURL = url
         tab.updateHistory()
-
-        if oldTitle != update.title, !update.title.isEmpty {
-            MainActor.assumeIsolated {
-                mediaController?.syncTitleForTab(tab.id, newTitle: update.title)
-            }
-        }
-    }
-
-    private func handleMediaEventMessage(_ body: Any?, for tab: Tab) {
-        guard let payloadBody = body as? String,
-              let data = payloadBody.data(using: .utf8),
-              let payload = try? JSONDecoder().decode(MediaEventPayload.self, from: data)
-        else {
-            return
-        }
-
-        MainActor.assumeIsolated {
-            mediaController?.receive(event: payload, from: tab)
-        }
-    }
-
-    private func extractDominantColor(from cgImage: CGImage) -> NSColor? {
-        guard cgImage.width > 0, cgImage.height > 0 else { return nil }
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(
-            data: nil,
-            width: 1,
-            height: 1,
-            bitsPerComponent: 8,
-            bytesPerRow: 4,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return nil
-        }
-
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-        guard let data = context.data else { return nil }
-
-        let pixels = data.assumingMemoryBound(to: UInt8.self)
-        return NSColor(
-            red: CGFloat(pixels[0]) / 255.0,
-            green: CGFloat(pixels[1]) / 255.0,
-            blue: CGFloat(pixels[2]) / 255.0,
-            alpha: CGFloat(pixels[3]) / 255.0
-        )
     }
 }

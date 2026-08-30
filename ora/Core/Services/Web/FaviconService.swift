@@ -1,20 +1,29 @@
 import AppKit
 import CoreImage
 import FaviconFinder
+import ImageIO
 import SwiftUI
 
 final class FaviconService: ObservableObject {
     static let shared = FaviconService()
-    private var cache: [String: NSImage] = [:]
-    private var colorCache: [String: Color] = [:]
-    private var sourceURLCache: [String: URL] = [:]
+
+    private let cache = NSCache<NSString, NSImage>()
+    private let colorCache = NSCache<NSString, NSColor>()
+    private let sourceURLCache = NSCache<NSString, NSURL>()
     private var isFetching: Set<String> = []
     private var pendingCompletions: [String: [(NSImage?) -> Void]] = [:]
+
+    private init() {
+        cache.countLimit = 128
+        cache.totalCostLimit = 16 * 1024 * 1024
+        colorCache.countLimit = 128
+        sourceURLCache.countLimit = 128
+    }
 
     func getFavicon(for searchURL: String) -> NSImage? {
         guard let domain = extractDomain(from: searchURL) else { return nil }
 
-        if let cachedFavicon = cache[domain] {
+        if let cachedFavicon = cache.object(forKey: domain as NSString) {
             return cachedFavicon
         }
 
@@ -25,15 +34,15 @@ final class FaviconService: ObservableObject {
     func getFaviconColor(for searchURL: String) -> Color? {
         guard let domain = extractDomain(from: searchURL) else { return nil }
 
-        if let cachedColor = colorCache[domain] {
-            return cachedColor
+        if let cachedColor = colorCache.object(forKey: domain as NSString) {
+            return Color(cachedColor)
         }
 
         // If favicon exists but color doesn't, compute it
-        if let favicon = cache[domain] {
-            let color = Color(favicon.averageColor())
-            colorCache[domain] = color
-            return color
+        if let favicon = cache.object(forKey: domain as NSString) {
+            let color = favicon.averageColor()
+            colorCache.setObject(color, forKey: domain as NSString)
+            return Color(color)
         }
 
         fetchAndCacheFavicon(for: domain)
@@ -42,7 +51,8 @@ final class FaviconService: ObservableObject {
 
     func faviconURL(for domain: String) -> URL? {
         let normalizedDomain = normalizeDomain(domain)
-        return sourceURLCache[normalizedDomain] ?? canonicalURL(for: normalizedDomain)
+        return sourceURLCache.object(forKey: normalizedDomain as NSString).map { $0 as URL }
+            ?? canonicalURL(for: normalizedDomain)
     }
 
     func faviconURL(forSearchURL searchURL: String) -> URL? {
@@ -82,7 +92,7 @@ final class FaviconService: ObservableObject {
             completion(nil)
             return
         }
-        if let cachedFavicon = cache[domain] {
+        if let cachedFavicon = cache.object(forKey: domain as NSString) {
             completion(cachedFavicon)
             return
         }
@@ -90,7 +100,7 @@ final class FaviconService: ObservableObject {
     }
 
     private func fetchAndCacheFavicon(for domain: String, completion: ((NSImage?) -> Void)? = nil) {
-        if let cachedFavicon = cache[domain] {
+        if let cachedFavicon = cache.object(forKey: domain as NSString) {
             completion?(cachedFavicon)
             return
         }
@@ -118,10 +128,10 @@ final class FaviconService: ObservableObject {
     @MainActor
     private func completeFetch(for domain: String, favicon: NSImage?, sourceURL: URL?) {
         if let favicon {
-            cache[domain] = favicon
-            colorCache[domain] = Color(favicon.averageColor())
+            cache.setObject(favicon, forKey: domain as NSString, cost: favicon.memoryCost)
+            colorCache.setObject(favicon.averageColor(), forKey: domain as NSString)
             if let sourceURL {
-                sourceURLCache[domain] = sourceURL
+                sourceURLCache.setObject(sourceURL as NSURL, forKey: domain as NSString)
             }
             objectWillChange.send()
         }
@@ -142,10 +152,41 @@ final class FaviconService: ObservableObject {
                 .download()
                 .largest()
             guard let faviconImage = favicon.image else { return nil }
+            if let downsampled = Self.downsampledPNG(from: faviconImage.data, maxPixelSize: 64) {
+                return (downsampled.image, downsampled.data, favicon.url.source)
+            }
             return (faviconImage.image, faviconImage.data, favicon.url.source)
         } catch {
             return nil
         }
+    }
+
+    private static func downsampledPNG(
+        from data: Data,
+        maxPixelSize: Int
+    ) -> (image: NSImage, data: Data)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(
+                  source,
+                  0,
+                  [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true,
+                      kCGImageSourceShouldCacheImmediately: true,
+                      kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                  ] as CFDictionary
+              ),
+              let pngData = NSBitmapImageRep(cgImage: cgImage)
+              .representation(using: .png, properties: [:])
+        else {
+            return nil
+        }
+
+        let image = NSImage(
+            cgImage: cgImage,
+            size: NSSize(width: cgImage.width, height: cgImage.height)
+        )
+        return (image, pngData)
     }
 
     func downloadAndSaveFavicon(
@@ -155,38 +196,17 @@ final class FaviconService: ObservableObject {
         completion: @escaping (URL?, Bool) -> Void
     ) {
         let normalizedDomain = normalizeDomain(domain)
-        if let cachedFavicon = cache[normalizedDomain],
-           let data = cachedFavicon.tiffRepresentation
-        {
-            do {
-                try data.write(to: saveURL, options: .atomic)
-                completion(faviconURL(for: normalizedDomain), true)
-            } catch {
-                completion(nil, false)
-            }
-            return
-        }
-
-        Task(priority: .utility) { [weak self] in
-            guard let self else {
+        fetchFaviconSync(for: "https://\(normalizedDomain)") { [weak self] favicon in
+            guard let self, let favicon, let data = favicon.pngData else {
                 completion(nil, false)
                 return
             }
 
-            let payload = await self.fetchFaviconPayload(for: normalizedDomain)
-            await MainActor.run {
-                guard let payload else {
-                    completion(nil, false)
-                    return
-                }
-
-                self.completeFetch(for: normalizedDomain, favicon: payload.image, sourceURL: payload.sourceURL)
-
-                do {
-                    try payload.data.write(to: saveURL, options: .atomic)
-                    completion(payload.sourceURL, true)
-                } catch {
-                    completion(nil, false)
+            let sourceURL = self.faviconURL(for: normalizedDomain)
+            DispatchQueue.global(qos: .utility).async {
+                let success = (try? data.write(to: saveURL, options: .atomic)) != nil
+                DispatchQueue.main.async {
+                    completion(success ? sourceURL : nil, success)
                 }
             }
         }
@@ -194,6 +214,20 @@ final class FaviconService: ObservableObject {
 }
 
 extension NSImage {
+    fileprivate var memoryCost: Int {
+        guard let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) else { return 0 }
+        return cgImage.bytesPerRow * cgImage.height
+    }
+
+    fileprivate var pngData: Data? {
+        guard let tiffRepresentation,
+              let representation = NSBitmapImageRep(data: tiffRepresentation)
+        else {
+            return nil
+        }
+        return representation.representation(using: .png, properties: [:])
+    }
+
     func averageColor() -> NSColor {
         guard let cgImage = self.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return NSColor.gray

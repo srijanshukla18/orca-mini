@@ -4,6 +4,78 @@ import Testing
 
 @MainActor
 struct BrowserPageHostViewTests {
+    @Test func usesNativeWebKitUserAgentWithoutAppendedOverride() async throws {
+        let settings = SpacePrivacySettings()
+        let delegate = MetadataRecordingDelegate()
+        let htmlURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("orca-native-user-agent-\(UUID().uuidString).html")
+        try Data("<title>User Agent Test</title>".utf8).write(to: htmlURL)
+        defer { try? FileManager.default.removeItem(at: htmlURL) }
+
+        let page = BrowserPage(
+            profile: BrowserEngineProfile(identifier: UUID(), isPrivate: true),
+            configuration: .oraDefault(privacySettings: settings),
+            delegate: delegate
+        )
+        defer { page.teardown() }
+
+        page.load(URLRequest(url: htmlURL))
+        try await waitUntil {
+            delegate.updates.contains { $0.title == "User Agent Test" }
+        }
+
+        var userAgent: String?
+        var scriptFinished = false
+        page.evaluateJavaScript("navigator.userAgent") { value, _ in
+            userAgent = value as? String
+            scriptFinished = true
+        }
+        try await waitUntil { scriptFinished }
+
+        let resolvedUserAgent = try #require(userAgent)
+        #expect(resolvedUserAgent.contains("AppleWebKit/"))
+        #expect(resolvedUserAgent.components(separatedBy: "Mozilla/5.0").count == 2)
+    }
+
+    @Test func nativeMetadataObservationTracksSameDocumentNavigation() async throws {
+        let settings = SpacePrivacySettings()
+        let delegate = MetadataRecordingDelegate()
+        let htmlURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ora-native-metadata-\(UUID().uuidString).html")
+        try Data("<title>Native Start</title>".utf8).write(to: htmlURL)
+        defer { try? FileManager.default.removeItem(at: htmlURL) }
+
+        let page = BrowserPage(
+            profile: BrowserEngineProfile(identifier: UUID(), isPrivate: true),
+            configuration: .oraDefault(privacySettings: settings),
+            delegate: delegate
+        )
+        defer { page.teardown() }
+
+        page.load(URLRequest(url: htmlURL))
+        try await waitUntil {
+            delegate.updates.contains { $0.title == "Native Start" }
+        }
+
+        var scriptFinished = false
+        var scriptError: Error?
+        page.evaluateJavaScript("history.pushState({}, '', '#spa'); document.title = 'Native SPA';") { _, error in
+            scriptError = error
+            scriptFinished = true
+        }
+        try await waitUntil { scriptFinished }
+        #expect(scriptError == nil)
+        try await waitUntil {
+            delegate.updates.contains {
+                $0.title == "Native SPA" && $0.url?.fragment == "spa"
+            }
+        }
+
+        #expect(delegate.updates.contains {
+            $0.title == "Native SPA" && $0.url?.fragment == "spa"
+        })
+    }
+
     @Test func attachingFirstContentViewAddsSubview() {
         let host = makeHost()
         let contentView = TrackingContentView()
@@ -97,6 +169,27 @@ struct BrowserPageHostViewTests {
 
     private func makeHost() -> BrowserPageHostView {
         BrowserPageHostView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+    }
+
+    private func waitUntil(
+        timeoutIterations: Int = 100,
+        condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        for _ in 0 ..< timeoutIterations {
+            if condition() {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        Issue.record("Timed out waiting for native WKWebView metadata observation")
+    }
+}
+
+private final class MetadataRecordingDelegate: BrowserPageDelegate {
+    private(set) var updates: [BrowserDocumentMetadata] = []
+
+    func browserPage(_ page: BrowserPage, didUpdateDocumentMetadata metadata: BrowserDocumentMetadata) {
+        updates.append(metadata)
     }
 }
 

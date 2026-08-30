@@ -7,23 +7,6 @@ enum BrowserWebsiteDataType: Hashable {
     case all
 }
 
-enum BrowserUserScriptInjectionTime {
-    case atDocumentStart
-    case atDocumentEnd
-}
-
-struct BrowserUserScript {
-    let name: String?
-    let source: String
-    let injectionTime: BrowserUserScriptInjectionTime
-    let forMainFrameOnly: Bool
-}
-
-struct BrowserScriptMessage {
-    let name: String
-    let body: Any?
-}
-
 struct BrowserOpenPanelOptions {
     let allowsDirectories: Bool
     let allowsMultipleSelection: Bool
@@ -63,9 +46,21 @@ struct BrowserNavigationEvent {
     let isLoading: Bool
 }
 
+struct BrowserDocumentMetadata {
+    let url: URL?
+    let title: String?
+}
+
 struct BrowserSnapshotConfiguration {
     let rect: CGRect?
     let afterScreenUpdates: Bool
+    let snapshotWidth: CGFloat?
+
+    init(rect: CGRect?, afterScreenUpdates: Bool, snapshotWidth: CGFloat? = nil) {
+        self.rect = rect
+        self.afterScreenUpdates = afterScreenUpdates
+        self.snapshotWidth = snapshotWidth
+    }
 
     static let full = BrowserSnapshotConfiguration(rect: nil, afterScreenUpdates: false)
 }

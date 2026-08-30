@@ -66,26 +66,11 @@ struct BrowserWebContentView: View {
                 .id(tab.id)
             } else if let page = tab.browserPage {
                 BrowserPageView(page: page).id(tab.id)
-                    .overlay(alignment: .topLeading) {
-                        if let triggerState = tab.passwordTriggerOverlayState {
-                            PasswordAutofillTriggerView(overlay: triggerState, tab: tab)
-                        }
-                    }
-                    .overlay(alignment: .topLeading) {
-                        if let passwordOverlayState = tab.passwordOverlayState {
-                            PasswordAutofillOverlayView(overlay: passwordOverlayState, tab: tab)
-                        }
-                    }
                     .overlay(alignment: .topTrailing) {
                         if appState.showFinderIn == tab.id {
                             FindView(page: page)
                                 .padding(.top, 16)
                                 .padding(.trailing, 16)
-                        }
-                    }
-                    .overlay(alignment: .bottomLeading) {
-                        if let hovered = tab.hoveredLinkURL, !hovered.isEmpty {
-                            LinkPreview(text: hovered)
                         }
                     }
             } else {

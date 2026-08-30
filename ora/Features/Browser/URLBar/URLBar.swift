@@ -35,16 +35,6 @@ struct URLBar: View {
 
     // MARK: - Helpers
 
-    private func getForegroundColor(_ tab: Tab) -> Color {
-        let nsColor = NSColor(tab.backgroundColor)
-        if let ciColor = CIColor(color: nsColor) {
-            let luminance = 0.299 * ciColor.red + 0.587 * ciColor.green + 0.114 * ciColor.blue
-            return luminance < 0.5 ? .white : .black
-        } else {
-            return .black
-        }
-    }
-
     private func triggerCopy(_ text: String) {
         ClipboardUtils.triggerCopy(
             text,
@@ -54,12 +44,12 @@ struct URLBar: View {
     }
 
     var buttonForegroundColor: Color {
-        return tabManager.activeTab.map { getForegroundColor($0).opacity(0.5) } ?? .gray
+        theme.foreground.opacity(0.5)
     }
 
     private func shareCurrentPage(tab: Tab, sourceView: NSView, sourceRect: NSRect) {
         let url = tab.url
-        let title = tab.title.isEmpty ? "Shared from Ora" : tab.title
+        let title = tab.title.isEmpty ? "Shared from Orca Mini" : tab.title
         let items: [Any] = [title, url]
         let picker = NSSharingServicePicker(items: items)
         picker.delegate = nil
@@ -213,7 +203,7 @@ struct URLBar: View {
                 // URL field area - morphs between display and launcher input
                 Group {
                     if isEditing {
-                        inlineLauncherInput(tab: tab)
+                        inlineLauncherInput()
                             .transition(.blurReplace)
                     } else {
                         urlDisplayField(tab: tab)
@@ -251,7 +241,7 @@ struct URLBar: View {
             .padding(4)
             .background(
                 Rectangle()
-                    .fill(tab.backgroundColor)
+                    .fill(theme.solidWindowBackgroundColor)
             )
             .animation(.easeOut(duration: 0.25), value: isEditing)
             // Hidden button for keyboard shortcut
@@ -262,11 +252,15 @@ struct URLBar: View {
                     .allowsHitTesting(false)
             )
             .onChange(of: tabManager.activeTab?.id) { _, _ in
-                if isEditing { dismissEditing() }
+                if isEditing {
+                    dismissEditing()
+                }
             }
             .onChange(of: appState.showLauncher) { _, newValue in
                 // Dismiss URL bar editing if the center launcher is opened
-                if newValue, isEditing { dismissEditing() }
+                if newValue, isEditing {
+                    dismissEditing()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .copyAddressURL)) { _ in
                 if let activeTab = tabManager.activeTab {
@@ -358,7 +352,7 @@ struct URLBar: View {
 
     // MARK: - Inline Launcher Input (editing)
 
-    private func inlineLauncherInput(tab: Tab) -> some View {
+    private func inlineLauncherInput() -> some View {
         HStack(spacing: 8) {
             Image(systemName: isValidURL(launcherInput) ? "globe" : "magnifyingglass")
                 .font(.system(size: 12))
@@ -379,8 +373,8 @@ struct URLBar: View {
                 onMoveDown: {
                     launcherViewModel.moveFocusedElement(.down)
                 },
-                cursorColor: getForegroundColor(tab).opacity(0.8),
-                textColor: getForegroundColor(tab).opacity(0.7),
+                cursorColor: theme.foreground.opacity(0.8),
+                textColor: theme.foreground.opacity(0.7),
                 placeholder: "Search the web or enter URL..."
             )
             .textFieldStyle(PlainTextFieldStyle())

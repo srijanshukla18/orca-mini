@@ -26,7 +26,7 @@ struct SectionDropDelegate: DropDelegate {
                     // Section is empty, just change type and order
                     let newType = tabType(for: self.targetSection)
                     from.type = newType
-                    // Update savedURL when moving into pinned/fav; clear when moving to normal
+                    // Update savedURL when moving into pinned; clear when moving to normal
                     switch newType {
                     case .pinned, .fav:
                         from.savedURL = from.url

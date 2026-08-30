@@ -7,83 +7,27 @@ struct ImportDataButton: View {
     @EnvironmentObject var privacyMode: PrivacyMode
 
     func importArc() {
-        if let root = getRoot() {
-            let result = inspectItems(root)
-            var newContainers: [TabContainer] = []
+        guard let root = getRoot(), let profile = tabManager.activeContainer else { return }
 
-            for space in result.cleanSpaces {
-                let container =
-                    tabManager
-                        .createContainer(
-                            name: space.title ?? "Unknown",
-                            emoji: space.emoji ?? "💀"
-                        )
-                newContainers
-                    .append(
-                        container
-                    )
-                for tab in result.cleanTabs where space.containerIDs
-                    .contains(
-                        tab.parentID
-                    )
-                {
-                    if let url = URL(
-                        string: tab.urlString
-                    ) {
-                        let newTab =
-                            tabManager
-                                .addTab(
-                                    title: tab.title,
-                                    url: url,
-                                    container: container,
-                                    historyManager: historyManager,
-                                    downloadManager: downloadManager,
-                                    isPrivate: privacyMode.isPrivate
-                                )
+        let result = inspectItems(root)
+        let pinnedParentIDs = Set(result.cleanSpaces.flatMap(\.containerIDs))
+        var importedURLs: Set<String> = []
 
-                        tabManager
-                            .togglePinTab(
-                                newTab
-                            )
-                    }
-                }
-            }
+        for tab in result.cleanTabs where importedURLs.insert(tab.urlString).inserted {
+            guard let url = URL(string: tab.urlString) else { continue }
 
-            var seenContainers: Set<UUID> = []
-            for container in newContainers {
-                if seenContainers
-                    .contains(container.id)
-                {
-                    continue
-                }
-                seenContainers
-                    .insert(container.id)
-                for tab in result.cleanTabs {
-                    if result.favs
-                        .contains(
-                            tab.parentID
-                        )
-                    {
-                        if let url = URL(
-                            string: tab.urlString
-                        ) {
-                            let newTab =
-                                tabManager
-                                    .addTab(
-                                        title: tab.title,
-                                        url: url,
-                                        container: container,
-                                        historyManager: historyManager,
-                                        downloadManager: downloadManager,
-                                        isPrivate: privacyMode.isPrivate
-                                    )
-                            tabManager
-                                .toggleFavTab(
-                                    newTab
-                                )
-                        }
-                    }
-                }
+            let newTab = tabManager.addTab(
+                title: tab.title,
+                url: url,
+                container: profile,
+                historyManager: historyManager,
+                downloadManager: downloadManager,
+                isPrivate: privacyMode.isPrivate
+            )
+            newTab.title = tab.title
+
+            if result.favs.contains(tab.parentID) || pinnedParentIDs.contains(tab.parentID) {
+                tabManager.togglePinTab(newTab)
             }
         }
     }

@@ -2,198 +2,99 @@ import SwiftData
 import SwiftUI
 
 // swiftlint:disable type_body_length large_tuple
-struct SpacesSettingsView: View {
+struct PrivacySettingsView: View {
     private enum ClearDataAction: Hashable {
         case cache(UUID)
         case cookies(UUID)
         case history(UUID)
     }
 
-    @Query var containers: [TabContainer]
+    @Query(sort: \TabContainer.lastAccessedAt, order: .reverse) private var profiles: [TabContainer]
 
     @StateObject private var settings = SettingsStore.shared
-    @State private var searchService = SearchEngineService()
-    @State private var selectedContainerId: UUID?
     @State private var completedClearActions: Set<ClearDataAction> = []
     @State private var newCustomFilterListURL = ""
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var toastManager: ToastManager
 
-    private var selectedContainer: TabContainer? {
-        containers.first { $0.id == selectedContainerId } ?? containers.first
+    private var profile: TabContainer? {
+        profiles.first
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Left list
-            List(selection: $selectedContainerId) {
-                ForEach(containers) { container in
-                    HStack {
-                        Text(container.emoji)
-                        Text(container.name)
-                    }
-                    .tag(container.id)
-                }
-            }
-            .frame(minWidth: 200, idealWidth: 200, maxWidth: 220)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                if let container = profile {
+                    privacySettingsCard(for: container)
+                    adBlockingSettingsCard(for: container)
 
-            Divider()
-
-            // Right details
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    if let container = selectedContainer {
-                        SettingsCard(header: "Defaults") {
-                            Grid(alignment: .leading, verticalSpacing: 12) {
-                                GridRow {
-                                    Text("Search Engine")
-                                        .frame(width: 140, alignment: .leading)
-                                    Picker(
-                                        "",
-                                        selection: Binding(
-                                            get: {
-                                                settings.defaultSearchEngineId(for: container.id)
-                                            },
-                                            set: { settings.setDefaultSearchEngineId($0, for: container.id) }
-                                        )
-                                    ) {
-                                        Text("Use Global Default").tag(nil as String?)
-                                        Divider()
-                                        ForEach(
-                                            searchService.searchEngines.filter { !$0.isAIChat },
-                                            id: \.name
-                                        ) { engine in
-                                            Text(engine.name).tag(Optional(engine.name))
-                                        }
+                    SettingsCard(header: "Clear Data") {
+                        VStack(spacing: 8) {
+                            Button(
+                                clearDataButtonTitle(
+                                    for: .cache(container.id),
+                                    defaultTitle: "Clear Cache",
+                                    completedTitle: "Cache Cleared"
+                                )
+                            ) {
+                                PrivacyService.clearCache(container) {
+                                    DispatchQueue.main.async {
+                                        completedClearActions.insert(.cache(container.id))
+                                        toastManager.show("Cache cleared", icon: .system("trash"))
                                     }
-                                    .pickerStyle(.menu)
-                                    .labelsHidden()
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-
-                                GridRow {
-                                    Text("AI Chat")
-                                        .frame(width: 140, alignment: .leading)
-                                    Picker(
-                                        "",
-                                        selection: Binding(
-                                            get: {
-                                                settings.defaultAIEngineId(for: container.id)
-                                            },
-                                            set: { settings.setDefaultAIEngineId($0, for: container.id) }
-                                        )
-                                    ) {
-                                        Text("Use Global Default").tag(nil as String?)
-                                        Divider()
-                                        ForEach(
-                                            searchService.searchEngines.filter(\.isAIChat),
-                                            id: \.name
-                                        ) { engine in
-                                            Text(engine.name).tag(Optional(engine.name))
-                                        }
-                                    }
-                                    .pickerStyle(.menu)
-                                    .labelsHidden()
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-
-                                GridRow {
-                                    Text("Auto Clear Tabs")
-                                        .frame(width: 140, alignment: .leading)
-                                    Picker(
-                                        "",
-                                        selection: Binding(
-                                            get: { settings.autoClearTabsAfter(for: container.id) },
-                                            set: { settings.setAutoClearTabsAfter($0, for: container.id) }
-                                        )
-                                    ) {
-                                        ForEach(AutoClearTabsAfter.allCases) { value in
-                                            Text(value.rawValue).tag(value)
-                                        }
-                                    }
-                                    .pickerStyle(.menu)
-                                    .labelsHidden()
-                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             }
-                        }
+                            .disabled(completedClearActions.contains(.cache(container.id)))
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                        privacySettingsCard(for: container)
-                        adBlockingSettingsCard(for: container)
-
-                        SettingsCard(header: "Clear Data") {
-                            VStack(spacing: 8) {
-                                Button(
-                                    clearDataButtonTitle(
-                                        for: .cache(container.id),
-                                        defaultTitle: "Clear Cache",
-                                        completedTitle: "Cache Cleared"
-                                    )
-                                ) {
-                                    PrivacyService.clearCache(container) {
-                                        DispatchQueue.main.async {
-                                            completedClearActions.insert(.cache(container.id))
-                                            toastManager.show("Cache cleared", icon: .system("trash"))
-                                        }
+                            Button(
+                                clearDataButtonTitle(
+                                    for: .cookies(container.id),
+                                    defaultTitle: "Clear Cookies",
+                                    completedTitle: "Cookies Cleared"
+                                )
+                            ) {
+                                PrivacyService.clearCookies(container) {
+                                    DispatchQueue.main.async {
+                                        completedClearActions.insert(.cookies(container.id))
+                                        toastManager.show("Cookies cleared", icon: .system("trash"))
                                     }
                                 }
-                                .disabled(completedClearActions.contains(.cache(container.id)))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                                Button(
-                                    clearDataButtonTitle(
-                                        for: .cookies(container.id),
-                                        defaultTitle: "Clear Cookies",
-                                        completedTitle: "Cookies Cleared"
-                                    )
-                                ) {
-                                    PrivacyService.clearCookies(container) {
-                                        DispatchQueue.main.async {
-                                            completedClearActions.insert(.cookies(container.id))
-                                            toastManager.show("Cookies cleared", icon: .system("trash"))
-                                        }
-                                    }
-                                }
-                                .disabled(completedClearActions.contains(.cookies(container.id)))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                                Button(
-                                    clearDataButtonTitle(
-                                        for: .history(container.id),
-                                        defaultTitle: "Clear History",
-                                        completedTitle: "History Cleared"
-                                    )
-                                ) {
-                                    if clearHistory(for: container) {
-                                        completedClearActions.insert(.history(container.id))
-                                        toastManager.show("History cleared", icon: .system("trash"))
-                                    }
-                                }
-                                .disabled(completedClearActions.contains(.history(container.id)))
-                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .buttonStyle(.bordered)
-                        }
+                            .disabled(completedClearActions.contains(.cookies(container.id)))
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
-                    } else {
-                        Text("No spaces found")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            Button(
+                                clearDataButtonTitle(
+                                    for: .history(container.id),
+                                    defaultTitle: "Clear History",
+                                    completedTitle: "History Cleared"
+                                )
+                            ) {
+                                if clearHistory(for: container) {
+                                    completedClearActions.insert(.history(container.id))
+                                    toastManager.show("History cleared", icon: .system("trash"))
+                                }
+                            }
+                            .disabled(completedClearActions.contains(.history(container.id)))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    Spacer(minLength: 0)
+                } else {
+                    Text("Browser profile unavailable")
+                        .foregroundStyle(.secondary)
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .onAppear {
-            if selectedContainerId == nil { selectedContainerId = containers.first?.id }
-            Task {
-                for container in containers {
-                    await AdBlockService.shared.registerSpace(containerId: container.id)
-                }
+            if let profile {
+                Task { await AdBlockService.shared.registerSpace(containerId: profile.id) }
             }
         }
     }
@@ -228,7 +129,7 @@ struct SpacesSettingsView: View {
     private func privacySettingsCard(for container: TabContainer) -> some View {
         SettingsCard(header: "Privacy") {
             Text(
-                "These protections apply only to \(container.name). Open tabs in this space are refreshed automatically."
+                "These protections apply to the browser profile. Open tabs are refreshed automatically."
             )
             .font(.subheadline)
             .foregroundStyle(.secondary)
@@ -237,16 +138,6 @@ struct SpacesSettingsView: View {
                 "Block third-party trackers",
                 isOn: privacyBinding(for: container, keyPath: \.blockThirdPartyTrackers)
             )
-            Toggle(
-                "Block fingerprinting",
-                isOn: privacyBinding(for: container, keyPath: \.blockFingerprinting)
-            )
-
-            Text(
-                "Reduces browser and device fingerprint surface for this space. This does not block cookies or other storage by itself."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
 
             Divider()
 
@@ -272,7 +163,7 @@ struct SpacesSettingsView: View {
 
         SettingsCard(
             header: "Ad Blocking",
-            description: "Powered by embedded AdGuard filter lists compiled for WebKit in this space."
+            description: "Powered by embedded AdGuard filter lists compiled for WebKit."
         ) {
             Toggle("Enable Ad Blocking", isOn: adBlockEnabledBinding(for: container))
 
@@ -294,7 +185,7 @@ struct SpacesSettingsView: View {
                         )
                         _ = await MainActor.run {
                             toastManager.show(
-                                changed ? "Filter lists updated for \(container.name)" :
+                                changed ? "Filter lists updated" :
                                     "Filter lists are already current",
                                 type: .info,
                                 icon: .system("arrow.clockwise.circle")
@@ -356,7 +247,7 @@ struct SpacesSettingsView: View {
                 }
 
                 if customRecords.isEmpty {
-                    Text("Add a remote AdGuard-style list URL to make it available in this space.")
+                    Text("Add a remote AdGuard-style filter list URL.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
@@ -490,13 +381,13 @@ struct SpacesSettingsView: View {
             do {
                 let record = try await AdBlockService.shared.addCustomList(sourceURL: submittedURL)
                 await AdBlockService.shared.spaceSettingsDidChange(containerId: container.id)
-                _ = await MainActor.run {
+                await MainActor.run { () in
                     newCustomFilterListURL = ""
-                    toastManager.show("Added \(record.name)", icon: .system("checkmark.circle"))
+                    _ = toastManager.show("Added \(record.name)", icon: .system("checkmark.circle"))
                 }
             } catch {
-                await MainActor.run {
-                    toastManager.show(error.localizedDescription, type: .error)
+                await MainActor.run { () in
+                    _ = toastManager.show(error.localizedDescription, type: .error)
                 }
             }
         }
@@ -545,12 +436,12 @@ struct SpacesSettingsView: View {
     ) {
         let privacySettings = settings.privacySettings(for: container.id)
         guard privacySettings.adBlock.enabled else {
-            return ("Ad blocking is off for this space.", nil, nil, false, false)
+            return ("Ad blocking is off.", nil, nil, false, false)
         }
 
         let enabledRecords = enabledAdBlockRecords(for: container)
         guard !enabledRecords.isEmpty else {
-            return ("Select at least one filter list to block ads in this space.", nil, nil, false, false)
+            return ("Select at least one filter list to block ads.", nil, nil, false, false)
         }
 
         let isUpdating = enabledRecords.contains { $0.status == .updating }

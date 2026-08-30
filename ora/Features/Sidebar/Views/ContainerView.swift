@@ -2,15 +2,11 @@ import SwiftUI
 
 struct ContainerView: View {
     let container: TabContainer
-    let selectedContainer: String
-    let containers: [TabContainer]
 
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var toolbarManager: ToolbarManager
     @EnvironmentObject var tabManager: TabManager
     @EnvironmentObject var privacyMode: PrivacyMode
-    @EnvironmentObject var toastManager: ToastManager
-
     @State var isDragging = false
     @State private var draggedItem: UUID?
 
@@ -19,19 +15,7 @@ struct ContainerView: View {
             if toolbarManager.isToolbarHidden {
                 SidebarURLDisplay()
             }
-            if !privacyMode.isPrivate {
-                FavTabsGrid(
-                    tabs: favoriteTabs,
-                    draggedItem: $draggedItem,
-                    onDrag: dragTab,
-                    selectedContainerId: selectedContainer,
-                    onSelect: selectTab,
-                    onFavoriteToggle: toggleFavorite,
-                    onClose: removeTab,
-                    onDuplicate: duplicateTab,
-                    onMoveToContainer: moveTab
-                )
-            } else {
+            if privacyMode.isPrivate {
                 VStack(alignment: .center, spacing: 8) {
                     Text("Private Browsing")
                         .font(.title2)
@@ -60,11 +44,8 @@ struct ContainerView: View {
                             onDrag: dragTab,
                             onSelect: selectTab,
                             onPinToggle: togglePin,
-                            onFavoriteToggle: toggleFavorite,
                             onClose: removeTab,
-                            onDuplicate: duplicateTab,
-                            onMoveToContainer: moveTab,
-                            containers: containers
+                            onDuplicate: duplicateTab
                         )
                         Divider()
                     }
@@ -74,22 +55,14 @@ struct ContainerView: View {
                         onDrag: dragTab,
                         onSelect: selectTab,
                         onPinToggle: togglePin,
-                        onFavoriteToggle: toggleFavorite,
                         onClose: removeTab,
                         onDuplicate: duplicateTab,
-                        onMoveToContainer: moveTab,
                         onAddNewTab: addNewTab
                     )
                 }
             }
         }
         .modifier(OraWindowDragGesture(isDragging: $isDragging))
-    }
-
-    private var favoriteTabs: [Tab] {
-        return container.tabs
-            .sorted(by: { $0.order > $1.order })
-            .filter { $0.type == .fav }
     }
 
     private var pinnedTabs: [Tab] {
@@ -116,27 +89,8 @@ struct ContainerView: View {
         tabManager.togglePinTab(tab)
     }
 
-    private func toggleFavorite(_ tab: Tab) {
-        tabManager.toggleFavTab(tab)
-    }
-
     private func selectTab(_ tab: Tab) {
         tabManager.activateTab(tab)
-    }
-
-    private func moveTab(
-        _ tab: Tab,
-        _ newContainer: TabContainer
-    ) {
-        tabManager
-            .moveTabToContainer(
-                tab,
-                toContainer: newContainer
-            )
-        toastManager.show(
-            "Moved to \(newContainer.emoji) \(newContainer.name)",
-            icon: .system("arrow.right.arrow.left")
-        )
     }
 
     private func dragTab(_ tabId: UUID) -> NSItemProvider {
@@ -163,15 +117,13 @@ private struct OraWindowDragGesture: ViewModifier {
     @Binding var isDragging: Bool
 
     func body(content: Content) -> some View {
-        Group {
-            if isDragging {
-                content
+        if isDragging {
+            content
+        } else {
+            if #available(macOS 15.0, *) {
+                content.gesture(WindowDragGesture())
             } else {
-                if #available(macOS 15.0, *) {
-                    content.gesture(WindowDragGesture())
-                } else {
-                    content.gesture(BackportWindowDragGesture(isDragging: $isDragging))
-                }
+                content.gesture(BackportWindowDragGesture(isDragging: $isDragging))
             }
         }
     }

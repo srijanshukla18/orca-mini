@@ -61,20 +61,12 @@ build/*
 *.pkg
 *.zip
 *.tar.gz
-appcast.xml
-appcast.xml.bak
-dsa_priv.pem
-dsa_pub.pem
 exportOptions.plist
-Ora-Browser.dmg
-rw.*.Ora-Browser.dmg
 
-# Sparkle and signing (SECURITY: Never commit private keys!)
+# Signing credentials (never commit private material)
 *_private.pem
-*_public.pem
-# *.pem
-dsa_priv.pem    # CRITICAL: Never commit this file!
-dsa_pub.pem     # Public key (safe to commit if needed)
+*.p12
+*.cer
 
 # Environment files (contains private keys!)
 .env
@@ -91,10 +83,6 @@ codesign*
 *.backup
 *.provisionprofile
 
-# Release artifacts (keep in build/ folder)
-# Uncomment these if you want to commit release artifacts:
-# !build/*.dmg
-# !build/appcast.xml
-# !build/dsa_pub.pem
+# Release artifacts stay in build/ and are uploaded to GitHub Releases.
 
 Vendor/CEF

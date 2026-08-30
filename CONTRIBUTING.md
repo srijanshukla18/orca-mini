@@ -1,86 +1,79 @@
-# Contributing to Ora
+# Contributing to Orca Mini
 
-This guide covers the workflow and expectations for contributing to Ora Browser.
+Orca Mini is intentionally small. Contributions should improve browsing, compatibility, stability, performance, accessibility, or maintainability without rebuilding the product surface that this fork removed.
 
-## Before You Start
+## Before you start
 
-- Search existing issues and pull requests before starting work.
-- For large features, architecture changes, or user-facing behavior changes, open an issue first so the approach can be discussed.
-- Keep pull requests focused. Small, reviewable changes move faster than broad refactors.
+- Search existing issues and pull requests.
+- Open an issue before investing in a large feature or architecture change.
+- Keep pull requests focused and explain their user-visible cost as well as their benefit.
+- Do not add analytics, telemetry, remote configuration, or a new background service without prior discussion.
 
-## Development Setup
+## Requirements
 
-### Requirements
-
-- macOS 15 or later
-- Xcode 15 or later
+- Apple silicon Mac running macOS 15 or later
+- Xcode 16 or later
 - Homebrew
 
-### Getting Started
+## Setup
 
 ```bash
-git clone https://github.com/the-ora/browser.git
+git clone https://github.com/srijanshukla18/browser.git
 cd browser
 ./scripts/setup.sh
 open Ora.xcodeproj
 ```
 
-The setup script installs required tooling, installs git hooks, and generates the Xcode project.
+The setup script installs the development tools, installs local git hooks, and generates `Ora.xcodeproj` from `project.yml`.
 
-If you change project configuration, edit `project.yml` and regenerate the project with:
-
-```bash
-xcodegen
-```
-
-## Development Workflow
+## Development workflow
 
 1. Create a branch from `main`.
-2. Make focused changes that follow the existing SwiftUI, AppKit, and WebKit patterns in the codebase.
-3. Commit using conventional commit messages.
-4. Open a pull request with a clear description of the change and its motivation.
-
-## Code Quality
-
-- `lefthook` installs the project hooks during setup.
-- Pre-commit hooks run `swiftformat` and `swiftlint` on staged Swift files.
-- Pre-push runs a debug build through `./scripts/xcbuild-debug.sh`.
-- Prefer existing patterns and project structure over introducing new abstractions without a clear need.
-- The current deployment target is macOS 15. Use availability checks if a change depends on newer APIs.
-- Use the project logger instead of `print`.
-
-You can run the main checks manually:
+2. Change `project.yml`, not the generated Xcode project, when editing project configuration.
+3. Follow the existing SwiftUI, AppKit, WebKit, and SwiftData patterns.
+4. Add or update tests when behavior changes.
+5. Run the checks below before opening a pull request.
 
 ```bash
-swiftformat . --quiet
-swiftlint lint --fix
-./scripts/xcbuild-debug.sh
-xcodebuild test -scheme ora -destination "platform=macOS"
+set -o pipefail
+xcodebuild test \
+  -scheme ora \
+  -destination 'platform=macOS,arch=arm64' \
+  -configuration Debug \
+  ARCHS=arm64 \
+  ONLY_ACTIVE_ARCH=YES \
+  CODE_SIGN_IDENTITY='' \
+  CODE_SIGNING_REQUIRED=NO | xcbeautify
 ```
 
-You can also run tests in Xcode with `Product > Test`.
+Use `./scripts/build-local.sh` when you need an installable development DMG. It produces an ad-hoc-signed local artifact; maintainers use the notarized release flow described in [docs/RELEASING.md](docs/RELEASING.md).
 
-## Pull Requests
-
-Before opening a pull request, make sure the change builds cleanly and includes tests when behavior changes or new functionality is added.
+## Pull requests
 
 Each pull request should:
 
 - explain what changed and why
 - reference related issues when applicable
-- include screenshots or recordings for UI changes
-- stay scoped to a single change where possible
+- include screenshots or recordings for interface changes, with private browsing data removed
+- call out CPU, memory, storage, network, or startup impact when relevant
+- stay scoped to one coherent change
+- preserve GPLv3 notices and update `THIRD_PARTY_NOTICES.md` when adding bundled code or dependencies
 
-## AI Assistance
+## Project principles
 
-If you use AI assistance for code generation, documentation, issue comments, or pull request content, disclose that use and describe the extent of the assistance. Contributors are still expected to understand and stand behind the submitted work.
+- Prefer native WebKit and macOS APIs over page polling or injected scripts.
+- Avoid changing the native WebKit user agent or browser fingerprint.
+- Keep one persistent profile plus isolated private browsing.
+- Keep pinned tabs and split-view browsing.
+- Treat background observers, timers, and network work as costs that need justification.
+- Do not edit historical database migrations if migrations are introduced later; add forward-only migrations.
 
-## Security and Conduct
+## AI assistance
 
-- Never commit secrets, signing keys, or other sensitive data.
-- Review [SECURITY.md](SECURITY.md) for security-specific guidance.
-- Follow the standards in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+If AI assistance materially contributed code, documentation, issue content, or a pull-request description, disclose its use. Contributors remain responsible for understanding, testing, and licensing everything they submit.
 
-## Questions
+## Security and conduct
 
-If you are unsure whether a change is a good fit, open an issue before investing significant time. For general discussion, you can also join the [Discord community](https://discord.gg/9aZWH52Zjm).
+- Never commit credentials, signing keys, profiles, browser data, or private screenshots.
+- Read [SECURITY.md](SECURITY.md) before reporting a vulnerability.
+- Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

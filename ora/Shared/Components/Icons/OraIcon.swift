@@ -37,10 +37,6 @@ struct AnyOraShape: Shape {
 enum OraIconType {
     case star
     case circle
-    case spaceCards
-    case spaceCardsDelete
-    case spaceCardsEdit
-    case autofill
     case copy
     case brush1
     case brush2
@@ -54,10 +50,6 @@ enum OraIconType {
         switch self {
         case .star:             AnyOraShape(StarIcon())
         case .circle:           AnyOraShape(Circle())
-        case .spaceCards:       AnyOraShape(SpaceCardsIcon())
-        case .spaceCardsDelete: AnyOraShape(SpaceCardsDeleteIcon())
-        case .spaceCardsEdit:   AnyOraShape(SpaceCardsEditIcon())
-        case .autofill:         AnyOraShape(AutofillIcon())
         case .copy:             AnyOraShape(CopyIcon())
         case .brush1:           AnyOraShape(Brush1())
         case .brush2:           AnyOraShape(Brush2())

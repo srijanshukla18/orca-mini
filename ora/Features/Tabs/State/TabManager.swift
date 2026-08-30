@@ -5,7 +5,6 @@ import SwiftUI
 
 private struct ClosedTabSnapshot {
     let id: UUID
-    let containerID: UUID
     let url: URL
     let savedURL: URL?
     let title: String
@@ -15,12 +14,10 @@ private struct ClosedTabSnapshot {
     let lastAccessedAt: Date?
     let type: TabType
     let order: Int
-    let backgroundColorHex: String
     let isPrivate: Bool
 
     init(tab: Tab) {
         id = tab.id
-        containerID = tab.container.id
         url = tab.url
         savedURL = tab.savedURL
         title = tab.title
@@ -30,7 +27,6 @@ private struct ClosedTabSnapshot {
         lastAccessedAt = tab.lastAccessedAt
         type = tab.type
         order = tab.order
-        backgroundColorHex = tab.backgroundColorHex
         isPrivate = tab.isPrivate
     }
 }
@@ -42,7 +38,6 @@ class TabManager: ObservableObject {
     @Published var activeTab: Tab?
     let modelContainer: ModelContainer
     let modelContext: ModelContext
-    let mediaController: MediaController
 
     var recentTabs: [Tab] {
         guard let container = activeContainer else { return [] }
@@ -55,8 +50,6 @@ class TabManager: ObservableObject {
     /// Note: Could be made injectable via init parameter if preferred
     let tabSearchingService: TabSearchingProviding
 
-    @Query(sort: \TabContainer.lastAccessedAt, order: .reverse) var containers: [TabContainer]
-
     private var cleanupTimer: Timer?
     private var recentlyClosedTabs: [ClosedTabSnapshot] = []
     private let maxRecentlyClosedTabs = 5
@@ -64,12 +57,10 @@ class TabManager: ObservableObject {
     init(
         modelContainer: ModelContainer,
         modelContext: ModelContext,
-        mediaController: MediaController,
         tabSearchingService: TabSearchingProviding = TabSearchingService()
     ) {
         self.modelContainer = modelContainer
         self.modelContext = modelContext
-        self.mediaController = mediaController
         self.tabSearchingService = tabSearchingService
 
         self.modelContext.undoManager = UndoManager()
@@ -122,34 +113,13 @@ class TabManager: ObservableObject {
         try? modelContext.save()
     }
 
-    func toggleFavTab(_ tab: Tab) {
-        if tab.type == .fav {
-            tab.type = .normal
-            tab.savedURL = nil
-        } else {
-            tab.type = .fav
-            tab.savedURL = tab.url
-        }
-
-        try? modelContext.save()
-    }
-
-    // MARK: - Container Public API's
-
-    func moveTabToContainer(_ tab: Tab, toContainer: TabContainer) {
-        tab.container = toContainer
-        try? modelContext.save()
-    }
-
     private func initializeActiveContainerAndTab() {
-        // Ensure containers are fetched
-        let containers = fetchContainers()
+        let profiles = fetchProfiles()
+        migrateLegacyFavoriteTabs(in: profiles)
 
-        // Get the last accessed container
-        if let lastAccessedContainer = containers.first {
-            activeContainer = lastAccessedContainer
-            // Get the last accessed tab from the active container
-            if let lastAccessedTab = lastAccessedContainer.tabs
+        if let profile = profiles.first {
+            activeContainer = profile
+            if let lastAccessedTab = profile.tabs
                 .sorted(by: { ($0.lastAccessedAt ?? Date.distantPast) > ($1.lastAccessedAt ?? Date.distantPast) })
                 .first
             {
@@ -157,82 +127,29 @@ class TabManager: ObservableObject {
                 activeTab?.maybeIsActive = true
             }
         } else {
-            let newContainer = createContainer()
-            activeContainer = newContainer
+            activeContainer = createProfile()
+        }
+    }
+
+    private func migrateLegacyFavoriteTabs(in profiles: [TabContainer]) {
+        var changed = false
+        for tab in profiles.flatMap(\.tabs) where tab.type == .fav {
+            tab.type = .pinned
+            tab.savedURL = tab.savedURL ?? tab.url
+            changed = true
+        }
+
+        if changed {
+            try? modelContext.save()
         }
     }
 
     @discardableResult
-    func createContainer(name: String = "Default", emoji: String = "•") -> TabContainer {
-        let newContainer = TabContainer(name: name, emoji: emoji)
-        modelContext.insert(newContainer)
-        activeContainer = newContainer
-        self.activeTab = nil
+    private func createProfile() -> TabContainer {
+        let profile = TabContainer(name: "Profile", emoji: "")
+        modelContext.insert(profile)
         try? modelContext.save()
-        //        _ = fetchContainers() // Refresh containers
-        return newContainer
-    }
-
-    func renameContainer(_ container: TabContainer, name: String, emoji: String) {
-        container.name = name
-        container.emoji = emoji
-        try? modelContext.save()
-    }
-
-    func deleteContainer(_ container: TabContainer) {
-        let containerId = container.id
-        Task { @MainActor in
-            try PasswordManagerService.shared.deleteEntries(for: containerId)
-
-            await PrivacyService.clearAllWebsiteData(for: containerId)
-
-            guard let persistedContainer = fetchContainer(id: containerId) else {
-                SettingsStore.shared.removeContainerSettings(for: containerId)
-                return
-            }
-
-            let wasActiveContainer = activeContainer?.id == containerId
-            prepareForContainerDeletion(isActiveContainer: wasActiveContainer)
-            deleteContainerContents(persistedContainer, containerId: containerId)
-
-            // Save child deletions before deleting the container.
-            // In practice, SwiftData can fail when the parent and children are
-            // removed in the same save pass while non-optional inverse
-            // relationships still exist.
-            try? modelContext.save()
-
-            guard let containerToDelete = fetchContainer(id: containerId) else {
-                SettingsStore.shared.removeContainerSettings(for: containerId)
-                activateFallbackContainerIfNeeded(afterDeletingActiveContainer: wasActiveContainer)
-                return
-            }
-
-            modelContext.delete(containerToDelete)
-            try? modelContext.save()
-            SettingsStore.shared.removeContainerSettings(for: containerId)
-
-            activateFallbackContainerIfNeeded(afterDeletingActiveContainer: wasActiveContainer)
-        }
-    }
-
-    func activateContainer(_ container: TabContainer, activateLastAccessedTab: Bool = true) {
-        activeContainer = container
-        container.lastAccessedAt = Date()
-
-        // Set the most recently accessed tab in the container
-        if let lastAccessedTab = container.tabs
-            .sorted(by: { $0.lastAccessedAt ?? Date() > $1.lastAccessedAt ?? Date() }).first,
-            lastAccessedTab.isWebViewReady
-        {
-            activeTab?.maybeIsActive = false
-            activeTab = lastAccessedTab
-            activeTab?.maybeIsActive = true
-            lastAccessedTab.lastAccessedAt = Date()
-        } else {
-            activeTab = nil
-        }
-
-        try? modelContext.save()
+        return profile
     }
 
     // MARK: - Tab Public API's
@@ -257,7 +174,6 @@ class TabManager: ObservableObject {
             favicon: favicon,
             container: container,
             type: .normal,
-            isPlayingMedia: false,
             order: container.tabs.count + 1,
             historyManager: historyManager,
             downloadManager: downloadManager,
@@ -311,7 +227,6 @@ class TabManager: ObservableObject {
                     favicon: faviconURL,
                     container: container,
                     type: .normal,
-                    isPlayingMedia: false,
                     order: container.tabs.count + 1,
                     historyManager: historyManager,
                     downloadManager: downloadManager,
@@ -365,9 +280,6 @@ class TabManager: ObservableObject {
             {
                 self.activateTab(nextTab)
 
-                //            } else if let nextContainer = containers.first(where: { $0.id != tab.container.id }) {
-                //                self.activateContainer(nextContainer)
-                //
             } else {
                 self.activeTab = nil
             }
@@ -397,7 +309,6 @@ class TabManager: ObservableObject {
                     tab.isWebViewReady = false
                     tab.destroyWebView()
                 }
-                self.mediaController.removeSession(for: tab.id)
                 try? self.modelContext.save()
             }
         }
@@ -414,8 +325,7 @@ class TabManager: ObservableObject {
 
     func restoreLastTab() {
         guard let snapshot = recentlyClosedTabs.popLast() else { return }
-        let container = fetchContainers()
-            .first(where: { $0.id == snapshot.containerID }) ?? activeContainer ?? createContainer()
+        guard let container = activeContainer else { return }
 
         shiftRestoredTabOrders(in: container, restoring: snapshot)
 
@@ -434,31 +344,20 @@ class TabManager: ObservableObject {
         restoredTab.faviconLocalFile = snapshot.faviconLocalFile
         restoredTab.createdAt = snapshot.createdAt
         restoredTab.lastAccessedAt = snapshot.lastAccessedAt
-        restoredTab.backgroundColorHex = snapshot.backgroundColorHex
-
         modelContext.insert(restoredTab)
         container.tabs.append(restoredTab)
         activateTab(restoredTab)
         try? modelContext.save()
     }
 
-    func togglePiP(_ currentTab: Tab?, _ oldTab: Tab?) {
-        if currentTab?.id != oldTab?.id, SettingsStore.shared.autoPiPEnabled {
-            currentTab?.evaluateJavaScript("window.__oraTriggerPiP(true)")
-            oldTab?.evaluateJavaScript("window.__oraTriggerPiP()")
-        }
-    }
-
     func activateTab(_ tab: Tab) {
-        // Toggle Picture-in-Picture on tab switch
-        togglePiP(tab, activeTab)
+        guard tab.container.id == activeContainer?.id else { return }
 
         // Activate the tab
         activeTab?.maybeIsActive = false
         activeTab = tab
         activeTab?.maybeIsActive = true
         tab.lastAccessedAt = Date()
-        activeContainer = tab.container
         tab.container.lastAccessedAt = Date()
 
         // Lazy load WebView if not ready
@@ -476,7 +375,6 @@ class TabManager: ObservableObject {
                 isPrivate: tab.isPrivate
             )
         }
-        tab.updateHeaderColor()
         try? modelContext.save()
     }
 
@@ -486,12 +384,10 @@ class TabManager: ObservableObject {
         // Skip cleanup if set to "Never" (365 days)
         guard timeout < 365 * 24 * 60 * 60 else { return }
 
-        let allContainers = fetchContainers()
-        for container in allContainers {
-            for tab in container.tabs {
-                if !tab.isAlive, tab.isWebViewReady, tab.id != activeTab?.id, !tab.isPlayingMedia, tab.type == .normal {
-                    tab.destroyWebView()
-                }
+        guard let profile = activeContainer else { return }
+        for tab in profile.tabs {
+            if !tab.isAlive, tab.isWebViewReady, tab.id != activeTab?.id, tab.type == .normal {
+                tab.destroyWebView()
             }
         }
     }
@@ -499,41 +395,15 @@ class TabManager: ObservableObject {
     /// Completely remove old normal tabs that haven't been accessed for a long time
     func removeOldTabs() {
         let cutoffDate = Date().addingTimeInterval(-SettingsStore.shared.tabRemovalTimeout)
-        let allContainers = fetchContainers()
+        guard let profile = activeContainer else { return }
 
-        for container in allContainers {
-            for tab in container.tabs {
-                if let lastAccessed = tab.lastAccessedAt,
-                   lastAccessed < cutoffDate,
-                   tab.id != activeTab?.id,
-                   !tab.isPlayingMedia,
-                   tab.type == .normal
-                {
-                    closeTab(tab: tab, shouldTrackForRestore: false)
-                }
-            }
-        }
-    }
-
-    /// Remove tabs in containers that have a per-space autoClearTabsAfter setting
-    func autoClearContainerTabs() {
-        let settings = SettingsStore.shared
-        let allContainers = fetchContainers()
-
-        for container in allContainers {
-            let policy = settings.autoClearTabsAfter(for: container.id)
-            guard let timeout = policy.seconds else { continue }
-
-            let cutoffDate = Date().addingTimeInterval(-timeout)
-            for tab in container.tabs {
-                if let lastAccessed = tab.lastAccessedAt,
-                   lastAccessed < cutoffDate,
-                   tab.id != activeTab?.id,
-                   !tab.isPlayingMedia,
-                   tab.type == .normal
-                {
-                    closeTab(tab: tab)
-                }
+        for tab in profile.tabs {
+            if let lastAccessed = tab.lastAccessedAt,
+               lastAccessed < cutoffDate,
+               tab.id != activeTab?.id,
+               tab.type == .normal
+            {
+                closeTab(tab: tab, shouldTrackForRestore: false)
             }
         }
     }
@@ -544,7 +414,6 @@ class TabManager: ObservableObject {
             DispatchQueue.main.async {
                 self?.cleanupOldTabs()
                 self?.removeOldTabs()
-                self?.autoClearContainerTabs()
             }
         }
     }
@@ -553,28 +422,17 @@ class TabManager: ObservableObject {
         cleanupTimer?.invalidate()
     }
 
-    /// Activate a tab by its persistent id. If the tab is in a
-    /// different container, also activate that container.
     func activateTab(id: UUID) {
-        let allContainers = fetchContainers()
-        for container in allContainers {
-            if let tab = container.tabs.first(where: { $0.id == id }) {
-                activateContainer(container)
-                activateTab(tab)
-                return
-            }
+        if let tab = activeContainer?.tabs.first(where: { $0.id == id }) {
+            activateTab(tab)
         }
     }
 
     func selectTabAtIndex(_ index: Int) {
         guard let container = activeContainer else { return }
 
-        // Match the sidebar ordering: favorites, then pinned, then normal tabs
+        // Match the sidebar ordering: pinned, then normal tabs
         // All sorted by order in descending order
-        let favoriteTabs = container.tabs
-            .filter { $0.type == .fav }
-            .sorted(by: { $0.order > $1.order })
-
         let pinnedTabs = container.tabs
             .filter { $0.type == .pinned }
             .sorted(by: { $0.order > $1.order })
@@ -584,7 +442,7 @@ class TabManager: ObservableObject {
             .sorted(by: { $0.order > $1.order })
 
         // Combine all tabs in the same order as the sidebar
-        let allTabs = favoriteTabs + pinnedTabs + normalTabs
+        let allTabs = pinnedTabs + normalTabs
 
         // Handle special case: Command+9 selects the last tab
         let targetIndex = (index == 9) ? allTabs.count - 1 : index - 1
@@ -596,7 +454,7 @@ class TabManager: ObservableObject {
         activateTab(targetTab)
     }
 
-    private func fetchContainers() -> [TabContainer] {
+    private func fetchProfiles() -> [TabContainer] {
         do {
             let descriptor = FetchDescriptor<TabContainer>(sortBy: [SortDescriptor(\.lastAccessedAt, order: .reverse)])
             return try modelContext.fetch(descriptor)
@@ -621,7 +479,7 @@ class TabManager: ObservableObject {
     }
 
     func refreshPrivacySettings(for containerId: UUID) {
-        guard let container = fetchContainer(id: containerId) else { return }
+        guard let container = activeContainer, container.id == containerId else { return }
 
         let loadedTabs = container.tabs.filter(\.isWebViewReady)
         guard !loadedTabs.isEmpty else { return }
@@ -641,68 +499,6 @@ class TabManager: ObservableObject {
     private func shiftRestoredTabOrders(in container: TabContainer, restoring snapshot: ClosedTabSnapshot) {
         for tab in container.tabs where tab.type == snapshot.type && tab.order >= snapshot.order {
             tab.order += 1
-        }
-    }
-}
-
-private extension TabManager {
-    func fetchContainer(id: UUID) -> TabContainer? {
-        let descriptor = FetchDescriptor<TabContainer>(
-            predicate: #Predicate { $0.id == id }
-        )
-
-        do {
-            return try modelContext.fetch(descriptor).first
-        } catch {
-            return nil
-        }
-    }
-
-    func prepareForContainerDeletion(isActiveContainer: Bool) {
-        guard isActiveContainer else { return }
-
-        activeTab?.maybeIsActive = false
-        activeTab = nil
-        activeContainer = nil
-    }
-
-    func deleteContainerContents(_ container: TabContainer, containerId: UUID) {
-        for tab in Array(container.tabs) {
-            if tab.isWebViewReady {
-                tab.destroyWebView()
-            }
-            mediaController.removeSession(for: tab.id)
-            modelContext.delete(tab)
-        }
-
-        for folder in Array(container.folders) {
-            modelContext.delete(folder)
-        }
-
-        for history in fetchHistory(for: containerId) {
-            modelContext.delete(history)
-        }
-    }
-
-    func activateFallbackContainerIfNeeded(afterDeletingActiveContainer wasActiveContainer: Bool) {
-        guard wasActiveContainer else { return }
-
-        if let nextContainer = fetchContainers().first {
-            activateContainer(nextContainer)
-        } else {
-            _ = createContainer()
-        }
-    }
-
-    func fetchHistory(for containerId: UUID) -> [History] {
-        let descriptor = FetchDescriptor<History>(
-            predicate: #Predicate { $0.container?.id == containerId }
-        )
-
-        do {
-            return try modelContext.fetch(descriptor)
-        } catch {
-            return []
         }
     }
 }

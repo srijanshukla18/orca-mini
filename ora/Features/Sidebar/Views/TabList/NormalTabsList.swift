@@ -1,4 +1,3 @@
-import SwiftData
 import SwiftUI
 
 struct NormalTabsList: View {
@@ -7,16 +6,9 @@ struct NormalTabsList: View {
     let onDrag: (UUID) -> NSItemProvider
     let onSelect: (Tab) -> Void
     let onPinToggle: (Tab) -> Void
-    let onFavoriteToggle: (Tab) -> Void
     let onClose: (Tab) -> Void
     let onDuplicate: (Tab) -> Void
-    let onMoveToContainer:
-        (
-            Tab,
-            TabContainer
-        ) -> Void
     let onAddNewTab: () -> Void
-    @Query var containers: [TabContainer]
     @EnvironmentObject var tabManager: TabManager
     @State private var previousTabIds: [UUID] = []
 
@@ -30,11 +22,8 @@ struct NormalTabsList: View {
                     isDragging: draggedItem == tab.id,
                     onTap: { onSelect(tab) },
                     onPinToggle: { onPinToggle(tab) },
-                    onFavoriteToggle: { onFavoriteToggle(tab) },
                     onClose: { onClose(tab) },
-                    onDuplicate: { onDuplicate(tab) },
-                    onMoveToContainer: { onMoveToContainer(tab, $0) },
-                    availableContainers: containers
+                    onDuplicate: { onDuplicate(tab) }
                 )
                 .onDrag { onDrag(tab.id) }
                 .onDrop(

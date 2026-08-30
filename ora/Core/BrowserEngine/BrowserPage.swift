@@ -2,11 +2,15 @@ import AppKit
 import Foundation
 @preconcurrency import WebKit
 
-final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate {
     weak var delegate: BrowserPageDelegate?
 
     private let webView: WKWebView
-    private let messageNames: [String]
+    private var urlObservation: NSKeyValueObservation?
+    private var titleObservation: NSKeyValueObservation?
+    private var metadataUpdateWorkItem: DispatchWorkItem?
+    private var lastEmittedDocumentURL: URL?
+    private var lastEmittedDocumentTitle: String?
     private var originalURL: URL?
     private(set) var lastCommittedURL: URL?
     private(set) var isDownloadNavigation = false
@@ -21,7 +25,6 @@ final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptM
         delegate: BrowserPageDelegate?
     ) {
         let webConfiguration = WKWebViewConfiguration()
-        webConfiguration.applicationNameForUserAgent = configuration.userAgent
         webConfiguration.websiteDataStore = profile.dataStore
         webConfiguration.allowsAirPlayForMediaPlayback = configuration.allowsAirPlayForMediaPlayback
         webConfiguration.preferences.setValue(
@@ -49,26 +52,14 @@ final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptM
 
         let contentController = WKUserContentController()
         webConfiguration.userContentController = contentController
-        messageNames = configuration.scriptMessageNames
         webView = WKWebView(frame: .zero, configuration: webConfiguration)
         self.delegate = delegate
 
         super.init()
 
-        for messageName in configuration.scriptMessageNames {
-            contentController.add(self, name: messageName)
-        }
-        for script in configuration.userScripts {
-            let userScript = WKUserScript(
-                source: script.source,
-                injectionTime: mapInjectionTime(script.injectionTime),
-                forMainFrameOnly: script.forMainFrameOnly
-            )
-            contentController.addUserScript(userScript)
-        }
-
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        observeDocumentMetadata()
         webView.allowsMagnification = true
         webView.allowsBackForwardNavigationGestures = configuration.allowsBackForwardNavigationGestures
         webView.wantsLayer = true
@@ -155,6 +146,23 @@ final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptM
         webView.evaluateJavaScript(script, completionHandler: completion)
     }
 
+    @discardableResult
+    func showWebInspector() -> Bool {
+        guard webView.isInspectable else { return false }
+
+        let inspectorSelector = NSSelectorFromString("_inspector")
+        let showSelector = NSSelectorFromString("show")
+        guard webView.responds(to: inspectorSelector),
+              let inspector = webView.perform(inspectorSelector)?.takeUnretainedValue() as? NSObject,
+              inspector.responds(to: showSelector)
+        else {
+            return false
+        }
+
+        inspector.perform(showSelector)
+        return true
+    }
+
     func takeSnapshot(
         configuration: BrowserSnapshotConfiguration,
         completion: @escaping (NSImage?, Error?) -> Void
@@ -164,6 +172,9 @@ final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptM
         if let rect = configuration.rect {
             snapshotConfiguration.rect = rect
         }
+        if let snapshotWidth = configuration.snapshotWidth {
+            snapshotConfiguration.snapshotWidth = NSNumber(value: Double(snapshotWidth))
+        }
         webView.takeSnapshot(with: snapshotConfiguration, completionHandler: completion)
     }
 
@@ -172,14 +183,15 @@ final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptM
     }
 
     func teardown() {
+        metadataUpdateWorkItem?.cancel()
+        metadataUpdateWorkItem = nil
+        urlObservation?.invalidate()
+        urlObservation = nil
+        titleObservation?.invalidate()
+        titleObservation = nil
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
-        let controller = webView.configuration.userContentController
-        controller.removeAllUserScripts()
-        for messageName in messageNames {
-            controller.removeScriptMessageHandler(forName: messageName)
-        }
         webView.removeFromSuperview()
     }
 
@@ -219,25 +231,44 @@ final class BrowserPage: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptM
         )
     }
 
-    private func handleCancelledNavigationError(_ error: Error) -> Bool {
-        let nsError = error as NSError
-        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
-    }
-
-    private func mapInjectionTime(_ injectionTime: BrowserUserScriptInjectionTime) -> WKUserScriptInjectionTime {
-        switch injectionTime {
-        case .atDocumentStart:
-            .atDocumentStart
-        case .atDocumentEnd:
-            .atDocumentEnd
+    private func observeDocumentMetadata() {
+        urlObservation = webView.observe(\.url, options: [.new]) { [weak self] _, _ in
+            self?.scheduleDocumentMetadataUpdate()
+        }
+        titleObservation = webView.observe(\.title, options: [.new]) { [weak self] _, _ in
+            self?.scheduleDocumentMetadataUpdate()
         }
     }
 
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+    private func scheduleDocumentMetadataUpdate() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.metadataUpdateWorkItem?.cancel()
+
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.emitDocumentMetadataIfChanged()
+            }
+            self.metadataUpdateWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
+        }
+    }
+
+    private func emitDocumentMetadataIfChanged() {
+        let url = webView.url
+        let title = webView.title
+        guard url != lastEmittedDocumentURL || title != lastEmittedDocumentTitle else { return }
+
+        lastEmittedDocumentURL = url
+        lastEmittedDocumentTitle = title
         delegate?.browserPage(
             self,
-            didReceiveScriptMessage: BrowserScriptMessage(name: message.name, body: message.body)
+            didUpdateDocumentMetadata: BrowserDocumentMetadata(url: url, title: title)
         )
+    }
+
+    private func handleCancelledNavigationError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
 
     func webView(

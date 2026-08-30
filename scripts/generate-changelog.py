@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Generate Ora release notes from merged pull requests between two tags.
+Generate Orca Mini release notes from merged pull requests between two tags.
 
 Usage:
   ./scripts/generate-changelog.py <previous-tag> <new-tag> <owner/repo>
 
-The script collects merged PR metadata with GitHub CLI, asks Codex CLI to write:
-  - Markdown release notes for GitHub Releases
-  - HTML release notes for Sparkle
+The script collects merged PR metadata with GitHub CLI and asks Codex CLI to
+write Markdown release notes for GitHub Releases.
 
 If Codex is unavailable, or if --no-llm is used, it falls back to a small local
 renderer that filters low-signal work and writes basic notes.
@@ -16,7 +15,6 @@ renderer that filters low-signal work and writes basic notes.
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import os
 import re
@@ -33,14 +31,13 @@ from typing import Any
 
 DEFAULT_MODEL = "gpt-5"
 SECTION_ORDER = ["Highlights", "Improvements", "Fixes", "Under the hood"]
-SPARKLE_SECTION_ORDER = ["Highlights", "Improvements"]
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROMPT_TEMPLATE_PATH = SCRIPT_DIR / "prompts" / "changelog_prompt.txt"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate Markdown and Sparkle release notes from merged pull requests."
+        description="Generate Markdown release notes from merged pull requests."
     )
     parser.add_argument("previous_tag", help="Starting tag, for example v0.2.11")
     parser.add_argument("new_tag", help="Ending tag, for example v0.2.12")
@@ -51,13 +48,8 @@ def parse_args() -> argparse.Namespace:
         help="Path for the generated Markdown changelog",
     )
     parser.add_argument(
-        "--output-html",
-        default="sparkle_release_notes.html",
-        help="Path for the generated Sparkle HTML notes",
-    )
-    parser.add_argument(
         "--model",
-        default=os.environ.get("ORA_CHANGELOG_MODEL", os.environ.get("OPENAI_MODEL", DEFAULT_MODEL)),
+        default=os.environ.get("ORCA_CHANGELOG_MODEL", os.environ.get("OPENAI_MODEL", DEFAULT_MODEL)),
         help="Codex model to use for the rewrite step",
     )
     parser.add_argument(
@@ -158,7 +150,7 @@ def collect_pull_requests(previous_tag: str, new_tag: str, repository: str) -> l
 
 def release_title_from_tag(tag: str) -> str:
     version = tag[1:] if tag.startswith("v") else tag
-    return f"Ora {version}"
+    return f"Orca Mini {version}"
 
 
 def compare_url(repository: str, previous_tag: str, new_tag: str) -> str:
@@ -174,9 +166,8 @@ def codex_output_schema() -> dict[str, Any]:
         "type": "object",
         "properties": {
             "markdown": {"type": "string"},
-            "html": {"type": "string"},
         },
-        "required": ["markdown", "html"],
+        "required": ["markdown"],
         "additionalProperties": False,
     }
 
@@ -184,7 +175,7 @@ def codex_output_schema() -> dict[str, Any]:
 def call_codex(prompt: str, model: str) -> dict[str, str]:
     ensure_tool("codex")
 
-    with tempfile.TemporaryDirectory(prefix="ora-changelog-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="orca-mini-changelog-") as temp_dir:
         temp_path = Path(temp_dir)
         schema_path = temp_path / "schema.json"
         output_path = temp_path / "response.json"
@@ -222,11 +213,10 @@ def call_codex(prompt: str, model: str) -> dict[str, str]:
 
         payload = json.loads(output_path.read_text(encoding="utf-8"))
         markdown = payload.get("markdown", "").strip()
-        html_output = payload.get("html", "").strip()
-        if not markdown or not html_output:
+        if not markdown:
             raise RuntimeError("codex returned empty release notes")
 
-        return {"markdown": markdown + "\n", "html": html_output + "\n"}
+        return {"markdown": markdown + "\n"}
 
 
 def normalize_summary(text: str) -> str:
@@ -324,15 +314,6 @@ def markdown_attribution(pr: dict[str, Any]) -> str:
     )
 
 
-def html_attribution(pr: dict[str, Any]) -> str:
-    author = html.escape(pr["author"])
-    url = html.escape(pr["url"])
-    return (
-        f'<em>(by <a href="https://github.com/{author}">@{author}</a> '
-        f'in <a href="{url}">#{pr["number"]}</a>)</em>'
-    )
-
-
 def render_markdown_fallback(title: str, compare_link: str, sections: dict[str, list[dict[str, Any]]]) -> str:
     lines = [f"## {title}", ""]
 
@@ -349,32 +330,6 @@ def render_markdown_fallback(title: str, compare_link: str, sections: dict[str, 
     return "\n".join(lines)
 
 
-def render_html_fallback(title: str, compare_link: str, sections: dict[str, list[dict[str, Any]]]) -> str:
-    improvements = list(sections.get("Improvements", [])) + list(sections.get("Fixes", []))
-    sparkle_sections = {
-        "Highlights": sections.get("Highlights", []),
-        "Improvements": improvements,
-    }
-
-    parts = ["<!doctype html>", "<html>", "<body>", f"<h2>{html.escape(title)}</h2>"]
-    for section in SPARKLE_SECTION_ORDER:
-        items = sparkle_sections.get(section, [])
-        if not items:
-            continue
-        parts.append(f"<h3>{html.escape(section)}</h3>")
-        parts.append("<ul>")
-        for pr in items[:6]:
-            summary = html.escape(clean_title_for_users(pr["title"]))
-            parts.append(f"<li>{summary} {html_attribution(pr)}</li>")
-        parts.append("</ul>")
-
-    parts.append(
-        f'<p><strong>Full Changelog:</strong> <a href="{html.escape(compare_link)}">{html.escape(compare_link)}</a></p>'
-    )
-    parts.extend(["</body>", "</html>"])
-    return "\n".join(parts) + "\n"
-
-
 def render_empty_release(title: str, compare_link: str) -> dict[str, str]:
     markdown = textwrap.dedent(
         f"""\
@@ -384,18 +339,7 @@ def render_empty_release(title: str, compare_link: str) -> dict[str, str]:
         {compare_link}
         """
     )
-    html_output = textwrap.dedent(
-        f"""\
-        <!doctype html>
-        <html>
-        <body>
-        <h2>{html.escape(title)}</h2>
-        <p><strong>Full Changelog:</strong> <a href="{html.escape(compare_link)}">{html.escape(compare_link)}</a></p>
-        </body>
-        </html>
-        """
-    )
-    return {"markdown": markdown, "html": html_output}
+    return {"markdown": markdown}
 
 
 def build_prompt(
@@ -428,7 +372,6 @@ def generate_with_fallback(
     sections = build_fallback_sections(prs)
     return {
         "markdown": render_markdown_fallback(title, compare_link, sections),
-        "html": render_html_fallback(title, compare_link, sections),
     }
 
 
@@ -461,9 +404,7 @@ def main() -> int:
             compare_url(args.repository, args.previous_tag, args.new_tag),
         )
         write_file(args.output_markdown, outputs["markdown"])
-        write_file(args.output_html, outputs["html"])
         print(f"Wrote {args.output_markdown}")
-        print(f"Wrote {args.output_html}")
         return 0
 
     if args.no_llm:
@@ -488,13 +429,11 @@ def main() -> int:
             mode = "fallback"
 
     write_file(args.output_markdown, outputs["markdown"])
-    write_file(args.output_html, outputs["html"])
 
     if args.review:
-        open_in_editor([args.output_markdown, args.output_html])
+        open_in_editor([args.output_markdown])
 
     print(f"Wrote {args.output_markdown}")
-    print(f"Wrote {args.output_html}")
     print(f"Mode: {mode}")
     return 0
 

@@ -1,6 +1,6 @@
-### Pull Request – Ora Browser
+### Pull Request – Orca Mini
 
-Thank you for contributing to Ora. Please fill out this template to help us review your PR efficiently.
+Thank you for contributing to Orca Mini. Please fill out this template to help us review your PR efficiently.
 
 ---
 
@@ -42,13 +42,16 @@ Example: “Used Claude Code for writing <this part of the code>.”
 ### Checklist
 
 Before submitting, ensure the following:
-	•	Code builds successfully on macOS 14+
-	•	All tests pass locally
-	•	Code follows Ora’s formatting and linting standards
-	•	No new warnings or errors
-	•	Descriptive title and summary provided
-	•	Screenshots attached if applicable
-	•	Related issues linked below
+
+- [ ] Code builds successfully on Apple silicon and macOS 15+
+- [ ] All tests pass locally
+- [ ] Code follows the existing project style
+- [ ] CPU, memory, storage, and network impact considered
+- [ ] Third-party notices updated when dependencies or bundled code change
+- [ ] No new warnings or errors
+- [ ] Descriptive title and summary provided
+- [ ] Screenshots attached if applicable
+- [ ] Related issues linked below
 
 ---
 

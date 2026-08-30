@@ -1,376 +1,6 @@
 import Foundation
 @preconcurrency import WebKit
 
-// swiftlint:disable type_body_length function_body_length
-struct FingerprintingProtectionProfile: Equatable {
-    let hardwareConcurrency: Int
-    let deviceMemory: Int
-    let maxTouchPoints: Int
-    let webdriver: Bool
-    let platform: String
-    let vendor: String
-    let language: String
-    let languages: [String]
-    let screenWidth: Int
-    let screenHeight: Int
-    let availWidth: Int
-    let availHeight: Int
-    let colorDepth: Int
-    let pixelDepth: Int
-    let devicePixelRatio: Double
-    let webGLVendor: String
-    let webGLRenderer: String
-    let webGLRendererName: String
-    let webGLVersion: String
-    let webGLShadingLanguageVersion: String
-    let canvasShift: Int
-    let audioNoise: Double
-    let audioBucketSize: Int
-    let mediaDeviceKinds: [String]
-
-    static let balanced = FingerprintingProtectionProfile(
-        hardwareConcurrency: 8,
-        deviceMemory: 8,
-        maxTouchPoints: 0,
-        webdriver: false,
-        platform: "MacIntel",
-        vendor: "Apple Computer, Inc.",
-        language: "en-US",
-        languages: ["en-US", "en"],
-        screenWidth: 1440,
-        screenHeight: 900,
-        availWidth: 1440,
-        availHeight: 877,
-        colorDepth: 24,
-        pixelDepth: 24,
-        devicePixelRatio: 2,
-        webGLVendor: "Apple Inc.",
-        webGLRenderer: "Apple GPU",
-        webGLRendererName: "WebKit WebGL",
-        webGLVersion: "WebGL 1.0",
-        webGLShadingLanguageVersion: "WebGL GLSL ES 1.0",
-        canvasShift: 1,
-        audioNoise: 0.000_015_258_789_062_5,
-        audioBucketSize: 64,
-        mediaDeviceKinds: ["audioinput", "audiooutput", "videoinput"]
-    )
-
-    func scriptSource() -> String {
-        let profileObject: [String: Any] = [
-            "audioBucketSize": audioBucketSize,
-            "audioNoise": audioNoise,
-            "availHeight": availHeight,
-            "availWidth": availWidth,
-            "canvasShift": canvasShift,
-            "colorDepth": colorDepth,
-            "deviceMemory": deviceMemory,
-            "devicePixelRatio": devicePixelRatio,
-            "hardwareConcurrency": hardwareConcurrency,
-            "language": language,
-            "languages": languages,
-            "maxTouchPoints": maxTouchPoints,
-            "mediaDeviceKinds": mediaDeviceKinds,
-            "pixelDepth": pixelDepth,
-            "platform": platform,
-            "screenHeight": screenHeight,
-            "screenWidth": screenWidth,
-            "vendor": vendor,
-            "webdriver": webdriver,
-            "webGLRenderer": webGLRenderer,
-            "webGLRendererName": webGLRendererName,
-            "webGLShadingLanguageVersion": webGLShadingLanguageVersion,
-            "webGLVendor": webGLVendor,
-            "webGLVersion": webGLVersion
-        ]
-
-        guard JSONSerialization.isValidJSONObject(profileObject),
-              let data = try? JSONSerialization.data(withJSONObject: profileObject, options: [.sortedKeys]),
-              let profileJSON = String(data: data, encoding: .utf8)
-        else {
-            return ""
-        }
-
-        return """
-        (function () {
-            if (window.__oraFingerprintingProtectionInstalled) {
-                return;
-            }
-            window.__oraFingerprintingProtectionInstalled = true;
-
-            const profile = \(profileJSON);
-
-            function defineGetter(target, property, getter) {
-                if (!target) return;
-                try {
-                    Object.defineProperty(target, property, {
-                        configurable: true,
-                        enumerable: false,
-                        get: getter
-                    });
-                } catch (error) {}
-            }
-
-            function defineValue(target, property, value) {
-                defineGetter(target, property, function () { return value; });
-            }
-
-            function wrapMethod(target, property, wrapper) {
-                if (!target || typeof target[property] !== 'function') return;
-                const original = target[property];
-                try {
-                    Object.defineProperty(target, property, {
-                        configurable: true,
-                        value: wrapper(original)
-                    });
-                } catch (error) {}
-            }
-
-            function cloneLanguages() {
-                return profile.languages.slice();
-            }
-
-            function makeDevice(kind, index) {
-                const suffix = String(index + 1);
-                const device = {
-                    deviceId: 'ora-' + kind + '-' + suffix,
-                    groupId: 'ora-group-' + kind,
-                    kind: kind,
-                    label: '',
-                    toJSON: function () {
-                        return {
-                            deviceId: this.deviceId,
-                            groupId: this.groupId,
-                            kind: this.kind,
-                            label: this.label
-                        };
-                    }
-                };
-
-                return Object.freeze(device);
-            }
-
-            function normalizeMediaDevices(devices) {
-                const hasLabels = Array.isArray(devices) && devices.some(function (device) {
-                    return !!(device && device.label);
-                });
-                if (hasLabels) {
-                    return devices;
-                }
-
-                return profile.mediaDeviceKinds.map(function (kind, index) {
-                    return makeDevice(kind, index);
-                });
-            }
-
-            function shouldSanitizeCanvas(canvas) {
-                if (!canvas) return false;
-                const width = canvas.width || 0;
-                const height = canvas.height || 0;
-                const area = width * height;
-                return width > 0 && height > 0 && area <= 262144;
-            }
-
-            function mutatePixelData(data, step) {
-                if (!data || !data.length) return;
-                const stride = Math.max(8, step * 16);
-                for (let index = 0; index < data.length; index += stride) {
-                    data[index] = (data[index] + profile.canvasShift) & 255;
-                    if (index + 1 < data.length) {
-                        data[index + 1] = (data[index + 1] + profile.canvasShift) & 255;
-                    }
-                }
-            }
-
-            function cloneAndSanitizeCanvas(canvas) {
-                if (!shouldSanitizeCanvas(canvas)) return canvas;
-
-                try {
-                    const clone = document.createElement('canvas');
-                    clone.width = canvas.width;
-                    clone.height = canvas.height;
-                    const context = clone.getContext('2d');
-                    if (!context) return canvas;
-
-                    context.drawImage(canvas, 0, 0);
-                    const imageData = context.getImageData(0, 0, clone.width, clone.height);
-                    mutatePixelData(imageData.data, Math.max(1, clone.width % 13));
-                    context.putImageData(imageData, 0, 0);
-                    return clone;
-                } catch (error) {
-                    return canvas;
-                }
-            }
-
-            function sanitizeImageData(imageData, widthHint) {
-                if (!imageData || !imageData.data) return imageData;
-                mutatePixelData(imageData.data, Math.max(1, widthHint % 11));
-                return imageData;
-            }
-
-            function sanitizeAudioBuffer(buffer) {
-                if (!buffer || typeof buffer.numberOfChannels !== 'number') return buffer;
-
-                for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
-                    let samples;
-                    try {
-                        samples = buffer.getChannelData(channel);
-                    } catch (error) {
-                        continue;
-                    }
-
-                    const stride = Math.max(profile.audioBucketSize, 32);
-                    for (let index = 0; index < samples.length; index += stride) {
-                        const sample = samples[index] || 0;
-                        samples[index] = Math.fround(sample + profile.audioNoise);
-                    }
-                }
-
-                return buffer;
-            }
-
-            function sanitizeArrayValues(values, mode) {
-                if (!values || typeof values.length !== 'number') return values;
-                const stride = Math.max(profile.audioBucketSize, 16);
-                for (let index = 0; index < values.length; index += stride) {
-                    if (mode === 'float') {
-                        values[index] = Math.fround((values[index] || 0) + profile.audioNoise);
-                    } else {
-                        values[index] = Math.max(0, Math.min(255, (values[index] || 0) + 1));
-                    }
-                }
-                return values;
-            }
-
-            defineValue(Navigator.prototype, 'hardwareConcurrency', profile.hardwareConcurrency);
-            defineValue(Navigator.prototype, 'deviceMemory', profile.deviceMemory);
-            defineValue(Navigator.prototype, 'maxTouchPoints', profile.maxTouchPoints);
-            defineValue(Navigator.prototype, 'webdriver', profile.webdriver);
-            defineValue(Navigator.prototype, 'platform', profile.platform);
-            defineValue(Navigator.prototype, 'vendor', profile.vendor);
-            defineValue(Navigator.prototype, 'language', profile.language);
-            defineGetter(Navigator.prototype, 'languages', cloneLanguages);
-
-            defineValue(Screen.prototype, 'width', profile.screenWidth);
-            defineValue(Screen.prototype, 'height', profile.screenHeight);
-            defineValue(Screen.prototype, 'availWidth', profile.availWidth);
-            defineValue(Screen.prototype, 'availHeight', profile.availHeight);
-            defineValue(Screen.prototype, 'colorDepth', profile.colorDepth);
-            defineValue(Screen.prototype, 'pixelDepth', profile.pixelDepth);
-            defineValue(window, 'devicePixelRatio', profile.devicePixelRatio);
-
-            if (navigator.permissions && typeof navigator.permissions.query === 'function') {
-                const originalQuery = navigator.permissions.query.bind(navigator.permissions);
-                navigator.permissions.query = function (parameters) {
-                    const permissionName = parameters && parameters.name;
-                    if (permissionName === 'camera' ||
-                        permissionName === 'microphone' ||
-                        permissionName === 'geolocation' ||
-                        permissionName === 'notifications') {
-                        return Promise.resolve({ state: 'prompt', onchange: null });
-                    }
-                    return originalQuery(parameters);
-                };
-            }
-
-            if (navigator.mediaDevices && typeof navigator.mediaDevices.enumerateDevices === 'function') {
-                const originalEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
-                navigator.mediaDevices.enumerateDevices = function () {
-                    return originalEnumerateDevices().then(normalizeMediaDevices);
-                };
-            }
-
-            wrapMethod(HTMLCanvasElement.prototype, 'toDataURL', function (original) {
-                return function () {
-                    const sanitizedCanvas = cloneAndSanitizeCanvas(this);
-                    return original.apply(sanitizedCanvas, arguments);
-                };
-            });
-
-            wrapMethod(HTMLCanvasElement.prototype, 'toBlob', function (original) {
-                return function () {
-                    const sanitizedCanvas = cloneAndSanitizeCanvas(this);
-                    return original.apply(sanitizedCanvas, arguments);
-                };
-            });
-
-            wrapMethod(CanvasRenderingContext2D && CanvasRenderingContext2D.prototype, 'getImageData', function (original) {
-                return function () {
-                    const result = original.apply(this, arguments);
-                    if (!this || !this.canvas || !shouldSanitizeCanvas(this.canvas)) {
-                        return result;
-                    }
-                    return sanitizeImageData(result, this.canvas.width || 1);
-                };
-            });
-
-            function wrapWebGLContext(contextType) {
-                if (!contextType || !contextType.prototype) return;
-
-                wrapMethod(contextType.prototype, 'getParameter', function (original) {
-                    return function (parameter) {
-                        if (parameter === 37445) return profile.webGLVendor;
-                        if (parameter === 37446) return profile.webGLRenderer;
-                        if (parameter === 7936) return profile.webGLVendor;
-                        if (parameter === 7937) return profile.webGLRendererName;
-                        if (parameter === 7938) return profile.webGLVersion;
-                        if (parameter === 35724) return profile.webGLShadingLanguageVersion;
-                        return original.apply(this, arguments);
-                    };
-                });
-            }
-
-            wrapWebGLContext(window.WebGLRenderingContext);
-            wrapWebGLContext(window.WebGL2RenderingContext);
-
-            if (window.OfflineAudioContext && window.OfflineAudioContext.prototype) {
-                wrapMethod(window.OfflineAudioContext.prototype, 'startRendering', function (original) {
-                    return function () {
-                        const rendering = original.apply(this, arguments);
-                        return Promise.resolve(rendering).then(function (buffer) {
-                            return sanitizeAudioBuffer(buffer);
-                        });
-                    };
-                });
-            }
-
-            wrapMethod(window.AnalyserNode && window.AnalyserNode.prototype, 'getFloatFrequencyData', function (original) {
-                return function (array) {
-                    const response = original.apply(this, arguments);
-                    sanitizeArrayValues(array, 'float');
-                    return response;
-                };
-            });
-
-            wrapMethod(window.AnalyserNode && window.AnalyserNode.prototype, 'getFloatTimeDomainData', function (original) {
-                return function (array) {
-                    const response = original.apply(this, arguments);
-                    sanitizeArrayValues(array, 'float');
-                    return response;
-                };
-            });
-
-            wrapMethod(window.AnalyserNode && window.AnalyserNode.prototype, 'getByteFrequencyData', function (original) {
-                return function (array) {
-                    const response = original.apply(this, arguments);
-                    sanitizeArrayValues(array, 'byte');
-                    return response;
-                };
-            });
-
-            wrapMethod(window.AnalyserNode && window.AnalyserNode.prototype, 'getByteTimeDomainData', function (original) {
-                return function (array) {
-                    const response = original.apply(this, arguments);
-                    sanitizeArrayValues(array, 'byte');
-                    return response;
-                };
-            });
-        })();
-        """
-    }
-}
-
-// swiftlint:enable type_body_length function_body_length
-
 final class BrowserPrivacyService {
     private enum StaticRuleListIdentifier: String {
         case trackers = "com.orabrowser.privacy.trackers.v1"
@@ -380,11 +10,28 @@ final class BrowserPrivacyService {
 
     static let shared = BrowserPrivacyService()
 
+    private final class CookiePolicyState {
+        struct Request {
+            let policy: CookiesPolicy
+            let completion: () -> Void
+        }
+
+        weak var dataStore: WKWebsiteDataStore?
+        var appliedPolicy: CookiesPolicy?
+        var requests: [Request] = []
+        var isApplying = false
+
+        init(dataStore: WKWebsiteDataStore) {
+            self.dataStore = dataStore
+        }
+    }
+
     private let ruleListStore = WKContentRuleListStore.default()!
     private let cacheLock = NSLock()
     private let artifactStore = ContentBlockerArtifactStore.shared
     private var cachedRuleLists: [String: WKContentRuleList] = [:]
     private var pendingRuleListCallbacks: [String: [(WKContentRuleList?) -> Void]] = [:]
+    private var cookiePolicyStates: [ObjectIdentifier: CookiePolicyState] = [:]
 
     func activeRuleListIdentifiers(for spaceID: UUID) -> [String] {
         let privacySettings = SettingsStore.shared.privacySettings(for: spaceID)
@@ -427,21 +74,15 @@ final class BrowserPrivacyService {
         group.notify(queue: .main, execute: completion)
     }
 
-    static func privacyScripts(for privacySettings: SpacePrivacySettings) -> [BrowserUserScript] {
-        guard privacySettings.blockFingerprinting else { return [] }
-
-        return [
-            BrowserUserScript(
-                name: "ora-fingerprinting-protection",
-                source: fingerprintingProtectionScriptSource(),
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            )
-        ]
-    }
-
-    static func fingerprintingProtectionScriptSource() -> String {
-        FingerprintingProtectionProfile.balanced.scriptSource()
+    /// Starts profile-scoped privacy preparation before the first page asks to navigate.
+    /// Rule-list lookups and cookie policy application share the same caches/in-flight
+    /// work used by `prepareConfiguration`.
+    func prewarm(spaceID: UUID, dataStore: WKWebsiteDataStore) {
+        let privacySettings = SettingsStore.shared.privacySettings(for: spaceID)
+        for identifier in enabledRuleLists(for: spaceID, privacySettings: privacySettings) {
+            contentRuleList(for: identifier) { _ in }
+        }
+        applyCookiePolicy(privacySettings.cookiesPolicy, to: dataStore) {}
     }
 
     private func enabledRuleLists(for spaceID: UUID, privacySettings: SpacePrivacySettings) -> [String] {
@@ -473,14 +114,83 @@ final class BrowserPrivacyService {
             return
         }
 
-        let cookiePolicy: WKHTTPCookieStore.CookiePolicy = switch policy {
+        let key = ObjectIdentifier(dataStore)
+        var shouldStartApplying = false
+
+        cacheLock.lock()
+        let state: CookiePolicyState
+        if let existing = cookiePolicyStates[key], existing.dataStore === dataStore {
+            state = existing
+        } else {
+            state = CookiePolicyState(dataStore: dataStore)
+            cookiePolicyStates[key] = state
+        }
+
+        if state.appliedPolicy?.rawValue == policy.rawValue, !state.isApplying, state.requests.isEmpty {
+            cacheLock.unlock()
+            completion()
+            return
+        }
+
+        state.requests.append(.init(policy: policy, completion: completion))
+        if !state.isApplying {
+            state.isApplying = true
+            shouldStartApplying = true
+        }
+        cacheLock.unlock()
+
+        if shouldStartApplying {
+            processNextCookiePolicyRequest(for: key)
+        }
+    }
+
+    private func processNextCookiePolicyRequest(for key: ObjectIdentifier) {
+        cacheLock.lock()
+        guard let state = cookiePolicyStates[key], let dataStore = state.dataStore else {
+            cookiePolicyStates.removeValue(forKey: key)
+            cacheLock.unlock()
+            return
+        }
+
+        guard !state.requests.isEmpty else {
+            state.isApplying = false
+            cacheLock.unlock()
+            return
+        }
+
+        let request = state.requests.removeFirst()
+        if state.appliedPolicy?.rawValue == request.policy.rawValue {
+            cacheLock.unlock()
+            request.completion()
+            DispatchQueue.main.async { [weak self] in
+                self?.processNextCookiePolicyRequest(for: key)
+            }
+            return
+        }
+        cacheLock.unlock()
+
+        let webKitPolicy: WKHTTPCookieStore.CookiePolicy = switch request.policy {
         case .blockAll:
             .disallow
         case .allowAll, .blockThirdParty:
             .allow
         }
 
-        dataStore.httpCookieStore.setCookiePolicy(cookiePolicy, completionHandler: completion)
+        dataStore.httpCookieStore.setCookiePolicy(webKitPolicy) { [weak self] in
+            guard let self else {
+                request.completion()
+                return
+            }
+
+            self.cacheLock.lock()
+            if let state = self.cookiePolicyStates[key], state.dataStore === dataStore {
+                state.appliedPolicy = request.policy
+            }
+            self.cacheLock.unlock()
+
+            request.completion()
+            self.processNextCookiePolicyRequest(for: key)
+        }
     }
 
     private func contentRuleList(

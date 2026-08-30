@@ -8,10 +8,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Disable automatic window tabbing for all NSWindow instances
         NSWindow.allowsAutomaticWindowTabbing = false
         AppearanceManager.shared.updateAppearance()
-        #if DEBUG
-            Bundle(path: "/Applications/InjectionIII.app/Contents/Resources/macOSInjection.bundle")?.load()
-            Bundle(path: "/Applications/InjectionIII.app/Contents/Resources/macOSSwiftUISupport.bundle")?.load()
-        #endif
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -26,8 +22,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func getWindow() -> NSWindow? {
-        if let key = NSApp.keyWindow { return key }
-        if let visible = NSApp.windows.first(where: { $0.isVisible }) { return visible }
+        if let key = NSApp.keyWindow {
+            return key
+        }
+        if let visible = NSApp.windows.first(where: { $0.isVisible }) {
+            return visible
+        }
         if let any = NSApp.windows.first {
             any.makeKeyAndOrderFront(nil)
             return any
@@ -98,7 +98,6 @@ struct OraApp: App {
             if let sharedModelContainer {
                 SettingsWindowRoot()
                     .environmentObject(AppearanceManager.shared)
-                    .environmentObject(UpdateService.shared)
                     .environmentObject(DefaultBrowserManager.shared)
                     .modelContainer(sharedModelContainer)
             } else {

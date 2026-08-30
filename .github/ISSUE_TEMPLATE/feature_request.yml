@@ -1,12 +1,11 @@
 name: 💡 Feature Request
-description: Suggest a new idea or improvement for Ora Browser
+description: Suggest a focused improvement for Orca Mini
 labels: ["enhancement", "triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for contributing to Ora’s future!  
-        Please share as much detail as possible about your idea.
+        Thanks for helping improve Orca Mini. Explain the browsing problem and the resource cost of the proposed solution.
 
   - type: textarea
     id: feature
@@ -22,7 +21,7 @@ body:
     attributes:
       label: Use Case
       description: Describe how users (including yourself) would use this feature.
-      placeholder: I’d use this to quickly switch between Spaces without reopening tabs...
+      placeholder: I’d use this to manage pinned tabs more quickly...
     validations:
       required: true
 

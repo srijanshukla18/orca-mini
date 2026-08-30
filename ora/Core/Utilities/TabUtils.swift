@@ -1,7 +1,6 @@
 import SwiftUI
 
 enum TabSection {
-    case fav
     case pinned
     case normal
 }
@@ -16,7 +15,7 @@ func isInSameSection(from: Tab, to: Tab) -> Bool {
 /// Gets the section for a given tab based on its type
 func section(for tab: Tab) -> TabSection {
     switch tab.type {
-    case .fav: return .fav
+    case .fav: return .pinned
     case .pinned: return .pinned
     case .normal: return .normal
     }
@@ -25,7 +24,6 @@ func section(for tab: Tab) -> TabSection {
 /// Converts a TabSection to corresponding TabType
 func tabType(for section: TabSection) -> TabType {
     switch section {
-    case .fav: return .fav
     case .pinned: return .pinned
     case .normal: return .normal
     }

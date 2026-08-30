@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# release.sh — Single entry point to build and publish an Ora Browser release.
+# release.sh — Single entry point to build and publish an Orca Mini release.
 #
 # Usage:
 #   ./scripts/release.sh              # auto-increment patch (0.2.12 → 0.2.13)
@@ -41,17 +41,13 @@ step "Preflight checks"
 [[ -f "project.yml" ]] || die "project.yml not found. Run from the project root."
 [[ -d "ora" ]]         || die "ora/ directory not found. Run from the project root."
 
-load_env APPLE_ID TEAM_ID SIGNING_IDENTITY DEVELOPER_ID_PROFILE APP_SPECIFIC_PASSWORD_KEYCHAIN ORA_PRIVATE_KEY
+load_env TEAM_ID SIGNING_IDENTITY DEVELOPER_ID_PROFILE APP_SPECIFIC_PASSWORD_KEYCHAIN
 
 MISSING_TOOLS=()
 command -v xcodegen   >/dev/null || MISSING_TOOLS+=(xcodegen)
 command -v create-dmg >/dev/null || MISSING_TOOLS+=(create-dmg)
 command -v gh         >/dev/null || MISSING_TOOLS+=(gh)
-MISSING_CASKS=()
-
-setup_sparkle_tools || prime_sparkle_tools_from_xcode || MISSING_CASKS+=(sparkle)
-
-if [[ ${#MISSING_TOOLS[@]} -gt 0 || ${#MISSING_CASKS[@]} -gt 0 ]]; then
+if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
     command -v brew >/dev/null || die "Homebrew is required to install missing release tooling."
 fi
 
@@ -60,13 +56,6 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
     HOMEBREW_NO_AUTO_UPDATE=1 brew install "${MISSING_TOOLS[@]}"
 fi
 
-if [[ ${#MISSING_CASKS[@]} -gt 0 ]]; then
-    echo "Installing missing casks: ${MISSING_CASKS[*]}"
-    HOMEBREW_NO_AUTO_UPDATE=1 brew install --cask "${MISSING_CASKS[@]}"
-    setup_sparkle_tools || prime_sparkle_tools_from_xcode || die "generate_appcast not found after installing Sparkle or resolving package dependencies."
-fi
-
-[[ -f "ora_public_key.pem" ]] || die "ora_public_key.pem not found."
 git diff --quiet --exit-code || die "Uncommitted changes. Commit or stash first."
 
 green "All checks passed."
@@ -90,7 +79,7 @@ fi
 
 BUILD_VERSION=$(( ${CURRENT_BUILD:-0} + 1 ))
 
-bold "Ora Browser v${VERSION} (build ${BUILD_VERSION})"
+bold "Orca Mini v${VERSION} (build ${BUILD_VERSION})"
 echo "  Current: v${CURRENT_VERSION} (build ${CURRENT_BUILD})"
 
 # ---------------------------------------------------------------------------
@@ -136,13 +125,13 @@ sed -i '' "s/CURRENT_PROJECT_VERSION: .*/CURRENT_PROJECT_VERSION: $BUILD_VERSION
 # Done
 # ---------------------------------------------------------------------------
 
-DMG_NAME="Ora-Browser-${VERSION}.dmg"
+DMG_NAME="Orca-Mini-${VERSION}-arm64.dmg"
+REPO="${ORCA_GITHUB_REPOSITORY:-srijanshukla18/browser}"
 echo ""
 green "========================================"
 green "  Release v${VERSION} published!"
 green "========================================"
 echo ""
 echo "  DMG:     build/${DMG_NAME} ($(du -h "build/${DMG_NAME}" | cut -f1))"
-echo "  Release: https://github.com/the-ora/browser/releases/tag/v$VERSION"
-echo "  Appcast: https://the-ora.github.io/browser/appcast.xml"
+echo "  Release: https://github.com/${REPO}/releases/tag/v$VERSION"
 echo ""

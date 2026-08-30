@@ -150,13 +150,11 @@ struct FloatingTabSwitcher: View {
     private func tabPreviewImage(for tab: Tab) -> some View {
         if let snapshot = tabSnapshots[tab] {
             Image(nsImage: snapshot.image)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
+                .resizable().scaledToFill()
                 .frame(width: Constants.previewWidth, height: Constants.previewHeight)
                 .clipped()
                 .cornerRadius(Constants.cornerRadius)
                 .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 4)
-                .drawingGroup()
                 .overlay(focusBorder(for: tab))
         } else {
             RoundedRectangle(cornerRadius: Constants.cornerRadius, style: .continuous)
@@ -180,8 +178,7 @@ struct FloatingTabSwitcher: View {
                 isWebViewReady: tab.isWebViewReady,
                 favicon: tab.favicon,
                 faviconLocalFile: tab.faviconLocalFile,
-                textColor: theme.foreground,
-                isPlayingMedia: tab.isPlayingMedia
+                textColor: theme.foreground
             )
             .frame(width: 16, height: 16)
 
@@ -311,29 +308,21 @@ struct FloatingTabSwitcher: View {
     }
 
     private func takeSnapshot(for tab: Tab, url: String, group: DispatchGroup) {
-        DispatchQueue.global(qos: .userInteractive).async {
-            let config = self.createSnapshotConfiguration(for: tab)
+        let config = createSnapshotConfiguration(for: tab)
+        tab.takeSnapshot(configuration: config) { image, _ in
+            defer { group.leave() }
+            guard let image else { return }
 
-            DispatchQueue.main.async {
-                tab.takeSnapshot(configuration: config) { image, _ in
-                    defer { group.leave() }
-
-                    guard let cgImage = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-                        return
-                    }
-
-                    // Preserve the original aspect ratio of the snapshot
-                    let originalSize = CGSize(width: cgImage.width, height: cgImage.height)
-                    let nsImage = NSImage(cgImage: cgImage, size: originalSize)
-
-                    self.tabSnapshots[tab] = TabSnapshot(image: nsImage, url: url)
-                }
-            }
+            self.tabSnapshots[tab] = TabSnapshot(image: image, url: url)
         }
     }
 
-    private func createSnapshotConfiguration(for tab: Tab) -> BrowserSnapshotConfiguration {
-        BrowserSnapshotConfiguration(rect: nil, afterScreenUpdates: false)
+    private func createSnapshotConfiguration(for _: Tab) -> BrowserSnapshotConfiguration {
+        BrowserSnapshotConfiguration(
+            rect: nil,
+            afterScreenUpdates: false,
+            snapshotWidth: Constants.previewWidth * 2
+        )
     }
 
     private func startMouseMonitor() {

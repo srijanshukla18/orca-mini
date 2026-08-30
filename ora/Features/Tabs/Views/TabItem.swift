@@ -4,6 +4,7 @@ import SwiftUI
 struct LocalFavIcon: View {
     let faviconLocalFile: URL?
     let textColor: Color
+    var size: CGFloat = 16
 
     @State private var image: NSImage?
 
@@ -12,14 +13,13 @@ struct LocalFavIcon: View {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 16, height: 16)
+                .frame(width: size, height: size)
                 .cornerRadius(4)
-                .grayscale(1.0)
         } else {
             Image(systemName: "globe")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 16, height: 16)
+                .frame(width: size, height: size)
                 .foregroundColor(textColor)
                 .onAppear(perform: loadFavicon)
         }
@@ -45,40 +45,53 @@ struct FavIcon: View {
     let favicon: URL?
     let faviconLocalFile: URL?
     let textColor: Color
-    var isPlayingMedia: Bool = false
+    var size: CGFloat = 16
+
+    @State private var fetchedImage: NSImage?
 
     var body: some View {
         HStack(spacing: 4) {
-            if let favicon, isWebViewReady {
-                AsyncImage(
-                    url: favicon
-                ) { image in
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 16, height: 16)
-                } placeholder: {
-                    LocalFavIcon(
-                        faviconLocalFile: faviconLocalFile,
-                        textColor: textColor
-                    )
-                }
-            } else {
+            if localFileExists {
                 LocalFavIcon(
                     faviconLocalFile: faviconLocalFile,
-                    textColor: textColor
+                    textColor: textColor,
+                    size: size
                 )
-            }
-
-            if isPlayingMedia {
-                Image(systemName: "speaker.wave.2.fill")
+            } else if let fetchedImage {
+                Image(nsImage: fetchedImage)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 8, height: 8)
-                    .foregroundColor(textColor.opacity(0.8))
+                    .frame(width: size, height: size)
+            } else {
+                LocalFavIcon(
+                    faviconLocalFile: nil,
+                    textColor: textColor,
+                    size: size
+                )
             }
         }
-        .frame(width: isPlayingMedia ? 28 : 16, height: 16)
+        .frame(width: size, height: size)
+        .onAppear(perform: fetchIfNeeded)
+        .onChange(of: favicon) { _, _ in
+            fetchedImage = nil
+            fetchIfNeeded()
+        }
+        .onChange(of: faviconLocalFile) { _, _ in
+            fetchedImage = nil
+            fetchIfNeeded()
+        }
+    }
+
+    private var localFileExists: Bool {
+        guard let faviconLocalFile else { return false }
+        return FileManager.default.fileExists(atPath: faviconLocalFile.path)
+    }
+
+    private func fetchIfNeeded() {
+        guard !localFileExists, isWebViewReady, let favicon else { return }
+        FaviconService.shared.fetchFaviconSync(for: favicon.absoluteString) { image in
+            fetchedImage = image
+        }
     }
 }
 
@@ -88,17 +101,13 @@ struct TabItem: View {
     let isDragging: Bool
     let onTap: () -> Void
     let onPinToggle: () -> Void
-    let onFavoriteToggle: () -> Void
     let onClose: () -> Void
     let onDuplicate: () -> Void
-    let onMoveToContainer: (TabContainer) -> Void
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject var tabManager: TabManager
     @EnvironmentObject var historyManager: HistoryManager
     @EnvironmentObject var downloadManager: DownloadManager
     @EnvironmentObject var privacyMode: PrivacyMode
-    let availableContainers: [TabContainer]
-
     @Environment(\.theme) private var theme
     @State private var isHovering = false
 
@@ -108,8 +117,7 @@ struct TabItem: View {
                 isWebViewReady: tab.isWebViewReady,
                 favicon: tab.favicon,
                 faviconLocalFile: tab.faviconLocalFile,
-                textColor: textColor,
-                isPlayingMedia: tab.isPlayingMedia
+                textColor: textColor
             )
             tabTitle
             Spacer()
@@ -217,35 +225,12 @@ struct TabItem: View {
             )
         }
 
-        Button(action: onFavoriteToggle) {
-            Label(
-                tab.type == .fav ? "Remove from Favorites" : "Add to Favorites",
-                systemImage: tab.type == .fav ? "star.slash" : "star"
-            )
-        }
-
         Button(action: onDuplicate) {
             Label("Duplicate Tab", systemImage: "doc.on.doc")
         }
         .disabled(!tab.isWebViewReady)
 
         Divider()
-
-        if availableContainers.count > 1 {
-            Divider()
-
-            Menu("Move to Container") {
-                ForEach(availableContainers) { container in
-                    if tab.container.id != container.id {
-                        Button(action: { onMoveToContainer(container) }) {
-                            Text(container.emoji.isEmpty ? container.name : "\(container.emoji) \(container.name)")
-                        }
-                    }
-                }
-            }
-
-            Divider()
-        }
 
         Button(role: .destructive, action: onClose) {
             Label("Close Tab", systemImage: "xmark")

@@ -3,16 +3,14 @@ import SwiftUI
 
 enum SettingsTab: String, Hashable, CaseIterable {
     case general
-    case spaces
-    case passwords
+    case privacy
     case shortcuts
     case searchEngines
 
     var title: String {
         switch self {
         case .general: return "General"
-        case .spaces: return "Spaces"
-        case .passwords: return "Passwords"
+        case .privacy: return "Privacy"
         case .shortcuts: return "Shortcuts"
         case .searchEngines: return "Search"
         }
@@ -21,8 +19,7 @@ enum SettingsTab: String, Hashable, CaseIterable {
     var symbol: String {
         switch self {
         case .general: return "gearshape"
-        case .spaces: return "rectangle.3.group"
-        case .passwords: return "key.horizontal"
+        case .privacy: return "hand.raised"
         case .shortcuts: return "command"
         case .searchEngines: return "magnifyingglass"
         }
@@ -31,11 +28,9 @@ enum SettingsTab: String, Hashable, CaseIterable {
     var subtitle: String {
         switch self {
         case .general:
-            return "Browser defaults, app behavior, and software updates."
-        case .spaces:
-            return "Space-specific defaults and per-space data controls."
-        case .passwords:
-            return "Password manager integration, vault access, and autofill behavior."
+            return "Browser defaults and app behavior."
+        case .privacy:
+            return "Privacy protections, content blocking, and browser data."
         case .shortcuts:
             return "Keyboard shortcuts and command mappings."
         case .searchEngines:
@@ -88,10 +83,8 @@ struct SettingsContentView: View {
         switch selectedTab {
         case .general:
             GeneralSettingsView()
-        case .spaces:
-            SpacesSettingsView()
-        case .passwords:
-            PasswordsSettingsView()
+        case .privacy:
+            PrivacySettingsView()
         case .shortcuts:
             ShortcutsSettingsView()
         case .searchEngines:

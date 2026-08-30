@@ -31,14 +31,14 @@ struct OraCommands: Commands {
             }.keyboardShortcut(KeyboardShortcuts.Tabs.close.keyboardShortcut)
 
             Button("Close Window") {
-                if let keyWindow = NSApp.keyWindow, ["Settings", "Passwords"].contains(keyWindow.title) {
+                if let keyWindow = NSApp.keyWindow, keyWindow.title == "Settings" {
                     keyWindow.performClose(nil)
                 }
             }
             .keyboardShortcut("w", modifiers: .command)
             .disabled({
                 guard let keyWindow = NSApp.keyWindow else { return true }
-                return !["Settings", "Passwords"].contains(keyWindow.title)
+                return keyWindow.title != "Settings"
             }())
         }
 
@@ -168,19 +168,30 @@ struct OraCommands: Commands {
             }
         }
 
-        CommandMenu("Passwords") {
-            Button("Manage Passwords") {
-                openPasswordsWindow()
+        CommandMenu("Developer") {
+            Button("Show Web Inspector") {
+                NotificationCenter.default.post(name: .showWebInspector, object: NSApp.keyWindow)
             }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
         }
 
         CommandGroup(replacing: .appInfo) {
-            Button("About Ora") { showAboutWindow() }
-            Button("Check for Updates") {
-                NotificationCenter.default.post(
-                    name: .checkForUpdates,
-                    object: NSApp.keyWindow
-                )
+            Button("About Orca Mini") { showAboutWindow() }
+        }
+
+        CommandGroup(replacing: .help) {
+            Button("Orca Mini Source Code") {
+                openProjectPage("")
+            }
+
+            Button("Open-Source Licenses") {
+                openProjectPage("/blob/main/THIRD_PARTY_NOTICES.md")
+            }
+
+            Divider()
+
+            Button("Report an Issue") {
+                openProjectPage("/issues/new/choose")
             }
         }
 
@@ -196,17 +207,23 @@ struct OraCommands: Commands {
 
     private func showAboutWindow() {
         let alert = NSAlert()
-        alert.messageText = "Ora Browser"
+        alert.messageText = "Orca Mini"
         alert.informativeText = """
         Version \(getAppVersion())
 
-        Fast, secure, and beautiful browser built for macOS.
+        A stripped-down WebKit browser for Apple silicon Macs.
 
-        © 2025 Ora Browser
+        GPLv3 open-source software derived from Ora Browser.
+        © 2026 Orca Mini contributors
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+
+    private func openProjectPage(_ path: String) {
+        guard let url = URL(string: "https://github.com/srijanshukla18/browser\(path)") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private func getAppVersion() -> String {

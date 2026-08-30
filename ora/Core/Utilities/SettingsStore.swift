@@ -14,25 +14,6 @@ struct SitePermissionSettings: Codable, Hashable, Identifiable {
     var notifications: Bool
 }
 
-enum AutoClearTabsAfter: String, CaseIterable, Identifiable, Codable {
-    case never = "Never"
-    case oneHour = "1 Hour"
-    case oneDay = "1 Day"
-    case oneWeek = "1 Week"
-    var id: String {
-        rawValue
-    }
-
-    var seconds: TimeInterval? {
-        switch self {
-        case .never: return nil
-        case .oneHour: return 3600
-        case .oneDay: return 86400
-        case .oneWeek: return 604_800
-        }
-    }
-}
-
 struct CustomSearchEngine: Codable, Identifiable, Hashable {
     let id: String
     let name: String
@@ -142,9 +123,7 @@ class SettingsStore: ObservableObject {
 
     // MARK: - Global keys
 
-    private let autoUpdateKey = "settings.autoUpdateEnabled"
     private let trackingThirdPartyKey = "settings.tracking.blockThirdParty"
-    private let fingerprintingKey = "settings.tracking.blockFingerprinting"
     private let adBlockingKey = "settings.tracking.adBlocking"
     private let cookiesPolicyKey = "settings.cookies.policy"
     private let adBlockFilterListsKey = "settings.adBlock.filterLists"
@@ -155,42 +134,13 @@ class SettingsStore: ObservableObject {
     private let tabAliveTimeoutKey = "settings.tabAliveTimeout"
     private let tabRemovalTimeoutKey = "settings.tabRemovalTimeout"
     private let maxRecentTabsKey = "settings.maxRecentTabs"
-    private let autoPiPEnabledKey = "settings.autoPiPEnabled"
-    private let passwordsEnabledKey = "settings.passwords.enabled"
-    private let passwordManagerProviderKey = "settings.passwords.provider"
-    private let passwordAutofillEnabledKey = "settings.passwords.autofillEnabled"
-    private let passwordAutofillSubmitEnabledKey = "settings.passwords.autofillSubmitEnabled"
-    private let passwordSavePromptsEnabledKey = "settings.passwords.savePromptsEnabled"
-    private let suppressedPasswordSavePromptHostsKey = "settings.passwords.suppressedSavePromptHosts"
-
-    // MARK: - Per-Container
-
-    private func keyForDefaultSearch(for containerId: UUID) -> String {
-        "settings.container.\(containerId.uuidString).defaultSearch"
-    }
-
-    private func keyForDefaultAI(for containerId: UUID) -> String {
-        "settings.container.\(containerId.uuidString).defaultAI"
-    }
-
-    private func keyForAutoClear(for containerId: UUID) -> String {
-        "settings.container.\(containerId.uuidString).autoClearTabsAfter"
-    }
 
     private func keyForPrivacySettings(for containerId: UUID) -> String {
         "settings.container.\(containerId.uuidString).privacy"
     }
 
-    @Published var autoUpdateEnabled: Bool {
-        didSet { defaults.set(autoUpdateEnabled, forKey: autoUpdateKey) }
-    }
-
     @Published var blockThirdPartyTrackers: Bool {
         didSet { defaults.set(blockThirdPartyTrackers, forKey: trackingThirdPartyKey) }
-    }
-
-    @Published var blockFingerprinting: Bool {
-        didSet { defaults.set(blockFingerprinting, forKey: fingerprintingKey) }
     }
 
     @Published var adBlocking: Bool {
@@ -233,41 +183,8 @@ class SettingsStore: ObservableObject {
         didSet { defaults.set(maxRecentTabs, forKey: maxRecentTabsKey) }
     }
 
-    @Published var autoPiPEnabled: Bool {
-        didSet { defaults.set(autoPiPEnabled, forKey: autoPiPEnabledKey) }
-    }
-
-    @Published var passwordsEnabled: Bool {
-        didSet { defaults.set(passwordsEnabled, forKey: passwordsEnabledKey) }
-    }
-
-    @Published var passwordManagerProvider: PasswordManagerProviderKind {
-        didSet { defaults.set(passwordManagerProvider.rawValue, forKey: passwordManagerProviderKey) }
-    }
-
-    @Published var passwordAutofillEnabled: Bool {
-        didSet { defaults.set(passwordAutofillEnabled, forKey: passwordAutofillEnabledKey) }
-    }
-
-    @Published var passwordAutofillSubmitEnabled: Bool {
-        didSet { defaults.set(passwordAutofillSubmitEnabled, forKey: passwordAutofillSubmitEnabledKey) }
-    }
-
-    @Published var passwordSavePromptsEnabled: Bool {
-        didSet { defaults.set(passwordSavePromptsEnabled, forKey: passwordSavePromptsEnabledKey) }
-    }
-
-    @Published private(set) var suppressedPasswordSavePromptHosts: Set<String> {
-        didSet { defaults.set(
-            Array(suppressedPasswordSavePromptHosts).sorted(),
-            forKey: suppressedPasswordSavePromptHostsKey
-        ) }
-    }
-
     init() {
-        autoUpdateEnabled = defaults.bool(forKey: autoUpdateKey)
         blockThirdPartyTrackers = defaults.bool(forKey: trackingThirdPartyKey)
-        blockFingerprinting = defaults.object(forKey: fingerprintingKey) as? Bool ?? true
         adBlocking = defaults.bool(forKey: adBlockingKey)
         if let raw = defaults.string(forKey: cookiesPolicyKey),
            let policy = CookiesPolicy(rawValue: raw)
@@ -320,55 +237,6 @@ class SettingsStore: ObservableObject {
 
         let maxRecentTabsValue = defaults.integer(forKey: maxRecentTabsKey)
         maxRecentTabs = maxRecentTabsValue == 0 ? 5 : maxRecentTabsValue
-
-        autoPiPEnabled = defaults.object(forKey: autoPiPEnabledKey) as? Bool ?? true
-        passwordsEnabled = defaults.object(forKey: passwordsEnabledKey) as? Bool ?? true
-        if let raw = defaults.string(forKey: passwordManagerProviderKey),
-           let provider = PasswordManagerProviderKind(rawValue: raw)
-        {
-            passwordManagerProvider = provider
-        } else {
-            passwordManagerProvider = .ora
-        }
-        passwordAutofillEnabled = defaults.object(forKey: passwordAutofillEnabledKey) as? Bool ?? true
-        passwordAutofillSubmitEnabled = defaults.object(forKey: passwordAutofillSubmitEnabledKey) as? Bool ?? true
-        passwordSavePromptsEnabled = defaults.object(forKey: passwordSavePromptsEnabledKey) as? Bool ?? true
-        suppressedPasswordSavePromptHosts = Set(defaults
-            .stringArray(forKey: suppressedPasswordSavePromptHostsKey) ?? [])
-    }
-
-    // MARK: - Per-container helpers
-
-    func defaultSearchEngineId(for containerId: UUID) -> String? {
-        defaults.string(forKey: keyForDefaultSearch(for: containerId))
-    }
-
-    func setDefaultSearchEngineId(_ id: String?, for containerId: UUID) {
-        defaults.set(id, forKey: keyForDefaultSearch(for: containerId))
-        objectWillChange.send()
-    }
-
-    func defaultAIEngineId(for containerId: UUID) -> String? {
-        defaults.string(forKey: keyForDefaultAI(for: containerId))
-    }
-
-    func setDefaultAIEngineId(_ id: String?, for containerId: UUID) {
-        defaults.set(id, forKey: keyForDefaultAI(for: containerId))
-        objectWillChange.send()
-    }
-
-    func autoClearTabsAfter(for containerId: UUID) -> AutoClearTabsAfter {
-        if let raw = defaults.string(forKey: keyForAutoClear(for: containerId)),
-           let value = AutoClearTabsAfter(rawValue: raw)
-        {
-            return value
-        }
-        return .never
-    }
-
-    func setAutoClearTabsAfter(_ value: AutoClearTabsAfter, for containerId: UUID) {
-        defaults.set(value.rawValue, forKey: keyForAutoClear(for: containerId))
-        objectWillChange.send()
     }
 
     func privacySettings(for containerId: UUID) -> SpacePrivacySettings {
@@ -390,9 +258,6 @@ class SettingsStore: ObservableObject {
     }
 
     func removeContainerSettings(for containerId: UUID) {
-        defaults.removeObject(forKey: keyForDefaultSearch(for: containerId))
-        defaults.removeObject(forKey: keyForDefaultAI(for: containerId))
-        defaults.removeObject(forKey: keyForAutoClear(for: containerId))
         defaults.removeObject(forKey: keyForPrivacySettings(for: containerId))
         objectWillChange.send()
     }
@@ -471,20 +336,6 @@ class SettingsStore: ObservableObject {
         customKeyboardShortcuts = shortcuts
     }
 
-    // MARK: - Password prompts
-
-    func suppressPasswordSavePrompts(for host: String) {
-        let normalizedHost = PasswordManagerService.normalizeHost(host)
-        guard !normalizedHost.isEmpty else { return }
-        suppressedPasswordSavePromptHosts.insert(normalizedHost)
-    }
-
-    func allowsPasswordSavePrompts(for host: String) -> Bool {
-        let normalizedHost = PasswordManagerService.normalizeHost(host)
-        guard !normalizedHost.isEmpty else { return true }
-        return !suppressedPasswordSavePromptHosts.contains(normalizedHost)
-    }
-
     // MARK: - Codable helpers
 
     private func saveCodable(_ value: some Encodable, forKey key: String) {
@@ -521,7 +372,6 @@ class SettingsStore: ObservableObject {
     private var legacyPrivacySettings: SpacePrivacySettings {
         SpacePrivacySettings(
             blockThirdPartyTrackers: blockThirdPartyTrackers,
-            blockFingerprinting: blockFingerprinting,
             adBlocking: adBlocking,
             cookiesPolicy: cookiesPolicy
         )

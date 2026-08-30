@@ -25,7 +25,9 @@ final class TabSearchingService: TabSearchingProviding {
 
         let predicate: Predicate<Tab>
         if trimmedText.isEmpty {
-            predicate = #Predicate { _ in true }
+            predicate = #Predicate { tab in
+                tab.container.id == activeContainerId
+            }
         } else {
             predicate = #Predicate { tab in
                 (
@@ -74,10 +76,18 @@ final class TabSearchingService: TabSearchingProviding {
         let url = tab.urlString.lowercased()
 
         func score(_ field: String) -> Int {
-            if field == text { return 100 }
-            if field.hasPrefix(text) { return 90 }
-            if field.contains(text) { return 75 }
-            if text.contains(field) { return 50 }
+            if field == text {
+                return 100
+            }
+            if field.hasPrefix(text) {
+                return 90
+            }
+            if field.contains(text) {
+                return 75
+            }
+            if text.contains(field) {
+                return 50
+            }
             return 0
         }
 

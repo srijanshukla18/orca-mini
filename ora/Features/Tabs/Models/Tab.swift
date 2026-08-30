@@ -4,14 +4,9 @@ import SwiftUI
 
 enum TabType: String, Codable {
     case pinned
+    // Kept only so existing stores can decode and migrate old favorite tabs to pinned.
     case fav
     case normal
-}
-
-struct URLUpdate: Codable {
-    let href: String
-    let title: String
-    let favicon: String?
 }
 
 // MARK: - Tab
@@ -30,12 +25,10 @@ class Tab: ObservableObject, Identifiable {
     var type: TabType
     var order: Int
     var faviconLocalFile: URL?
+    /// Retained only for compatibility with existing SwiftData stores.
     var backgroundColorHex: String = "#000000"
 
-    //    @Transient @Published var backgroundColor: Color = Color(.black)
-    @Transient var isPlayingMedia: Bool = false
     @Transient var isLoading: Bool = false
-    @Transient @Published var backgroundColor: Color = .black
     @Transient var historyManager: HistoryManager?
     @Transient var downloadManager: DownloadManager?
     @Transient var tabManager: TabManager?
@@ -43,16 +36,12 @@ class Tab: ObservableObject, Identifiable {
     @Transient var pageDelegate: TabBrowserPageDelegate?
     @Transient @Published var isWebViewReady: Bool = false
     @Transient @Published var loadingProgress: Double = 10.0
-    @Transient var colorUpdated = false
     @Transient var maybeIsActive = false
     @Transient @Published var hasNavigationError: Bool = false
     @Transient @Published var navigationError: Error?
     @Transient @Published var failedURL: URL?
-    @Transient @Published var hoveredLinkURL: String?
     @Transient var isPrivate: Bool = false
-    @Transient var passwordCoordinator: PasswordAutofillCoordinator?
-    @Transient @Published var passwordOverlayState: PasswordAutofillOverlayState?
-    @Transient @Published var passwordTriggerOverlayState: PasswordAutofillOverlayState?
+    @Transient private var isFetchingFavicon = false
 
     @Relationship(inverse: \TabContainer.tabs) var container: TabContainer
 
@@ -70,7 +59,6 @@ class Tab: ObservableObject, Identifiable {
         favicon: URL? = nil,
         container: TabContainer,
         type: TabType = .normal,
-        isPlayingMedia: Bool = false,
         order: Int,
         historyManager: HistoryManager? = nil,
         downloadManager: DownloadManager? = nil,
@@ -87,43 +75,41 @@ class Tab: ObservableObject, Identifiable {
         self.createdAt = nowDate
         self.lastAccessedAt = nowDate
         self.type = type
-        self.isPlayingMedia = isPlayingMedia
         self.container = container
         self.order = order
         self.historyManager = historyManager
         self.downloadManager = downloadManager
         self.tabManager = tabManager
         self.isPrivate = isPrivate
-        self.passwordCoordinator = PasswordAutofillCoordinator(tab: self)
         self.isWebViewReady = false
-    }
-
-    func syncBackgroundColorFromHex() {
-        backgroundColor = Color(hex: backgroundColorHex)
-    }
-
-    /// Call this whenever the color is set
-    func updateBackgroundColor(_ color: Color) {
-        backgroundColor = color
-        backgroundColorHex = color.toHex() ?? "#000000"
     }
 
     func setFavicon() {
         guard let host = self.url.host else { return }
 
-        let domain = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        let normalizedHost = host.lowercased()
+        let domain = normalizedHost.hasPrefix("www.") ? String(normalizedHost.dropFirst(4)) : normalizedHost
         guard let faviconURL = FaviconService.shared.faviconURL(for: domain) else { return }
+        if let faviconLocalFile,
+           FileManager.default.fileExists(atPath: faviconLocalFile.path)
+        {
+            return
+        }
+        guard !isFetchingFavicon else { return }
+
+        isFetchingFavicon = true
         self.favicon = faviconURL
 
-        let fileName = "\(self.id.uuidString).png"
+        let fileName = "\(domain).png"
         let saveURL = FileManager.default.faviconDirectory.appendingPathComponent(fileName)
 
         FaviconService.shared
             .downloadAndSaveFavicon(for: domain, faviconURL: faviconURL, to: saveURL) {
                 [weak self] sourceURL, success in
                 guard let self else { return }
-                if success {
-                    Task { @MainActor in
+                Task { @MainActor in
+                    self.isFetchingFavicon = false
+                    if success {
                         self.faviconLocalFile = saveURL
                         if let sourceURL {
                             self.favicon = sourceURL
@@ -143,14 +129,6 @@ class Tab: ObservableObject, Identifiable {
         }
     }
 
-    func updateHeaderColor() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            if let page = self?.browserPage {
-                self?.pageDelegate?.takeSnapshotAfterLoad(page)
-            }
-        }
-    }
-
     func updateHistory() {
         if let historyManager = self.historyManager {
             Task { @MainActor in
@@ -165,22 +143,9 @@ class Tab: ObservableObject, Identifiable {
         }
     }
 
-    func maintainSnapShots() {
-        if !self.colorUpdated || self.browserPage?.isLoading == true, self.maybeIsActive {
-            self.updateHeaderColor()
-
-            Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { [weak self] _ in
-                guard let tab = self else { return }
-                tab.maintainSnapShots()
-            }
-        }
-    }
-
     func setupBrowserPageDelegate(for page: BrowserPage) {
         let delegate = TabBrowserPageDelegate()
         delegate.tab = self
-        delegate.mediaController = tabManager?.mediaController
-        delegate.passwordCoordinator = passwordCoordinator
         page.delegate = delegate
         pageDelegate = delegate
     }
@@ -188,13 +153,11 @@ class Tab: ObservableObject, Identifiable {
     func goForward() {
         lastAccessedAt = Date()
         browserPage?.goForward()
-        updateHeaderColor()
     }
 
     func goBack() {
         lastAccessedAt = Date()
         browserPage?.goBack()
-        updateHeaderColor()
     }
 
     func restoreTransientState(
@@ -204,22 +167,16 @@ class Tab: ObservableObject, Identifiable {
         isPrivate: Bool
     ) {
         // Avoid double initialization
-        if browserPage != nil { return }
-
-        if passwordCoordinator == nil {
-            passwordCoordinator = PasswordAutofillCoordinator(tab: self)
+        if browserPage != nil {
+            return
         }
 
         let engine = BrowserEngine.shared
         let profile = engine.makeProfile(identifier: container.id, isPrivate: isPrivate)
         let privacySettings = SettingsStore.shared.privacySettings(for: container.id)
-        let userScripts = OraBrowserScripts.userScripts() + BrowserPrivacyService.privacyScripts(for: privacySettings)
         let page = engine.makePage(
             profile: profile,
-            configuration: BrowserPageConfiguration.oraDefault(
-                userScripts: userScripts,
-                privacySettings: privacySettings
-            ),
+            configuration: BrowserPageConfiguration.oraDefault(privacySettings: privacySettings),
             delegate: nil
         )
         browserPage = page
@@ -229,10 +186,13 @@ class Tab: ObservableObject, Identifiable {
         self.tabManager = tabManager
         self.isWebViewReady = false
         self.setupBrowserPageDelegate(for: page)
-        self.syncBackgroundColorFromHex()
         // Load after a short delay to ensure layout
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-            let url = if self.type != .normal { self.savedURL } else { self.url }
+            let url = if self.type != .normal {
+                self.savedURL
+            } else {
+                self.url
+            }
             page.load(URLRequest(url: url ?? self.url))
             self.isWebViewReady = true
         }
@@ -372,6 +332,11 @@ class Tab: ObservableObject, Identifiable {
 
     func evaluateJavaScript(_ script: String, completion: ((Any?, Error?) -> Void)? = nil) {
         browserPage?.evaluateJavaScript(script, completion: completion)
+    }
+
+    @discardableResult
+    func showWebInspector() -> Bool {
+        browserPage?.showWebInspector() ?? false
     }
 
     func takeSnapshot(

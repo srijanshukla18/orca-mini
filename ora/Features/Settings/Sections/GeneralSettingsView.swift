@@ -3,7 +3,6 @@ import SwiftUI
 
 struct GeneralSettingsView: View {
     @EnvironmentObject var appearanceManager: AppearanceManager
-    @EnvironmentObject var updateService: UpdateService
     @StateObject private var settings = SettingsStore.shared
     @StateObject private var defaultBrowserManager = DefaultBrowserManager.shared
 
@@ -11,7 +10,7 @@ struct GeneralSettingsView: View {
         SettingsSection {
             SettingsCard {
                 HStack {
-                    Text("Ora Browser")
+                    Text("Orca Mini")
                         .font(.headline)
                     Spacer()
                     Text(getAppVersion())
@@ -27,7 +26,7 @@ struct GeneralSettingsView: View {
             if !defaultBrowserManager.isDefault {
                 SettingsCard {
                     HStack {
-                        Text("Born for your Mac. Make Ora your default browser.")
+                        Text("Born for your Mac. Make Orca Mini your default browser.")
                         Spacer()
                         Button("Set as Default") { DefaultBrowserManager.requestSetAsDefault() }
                     }
@@ -75,44 +74,6 @@ struct GeneralSettingsView: View {
                             }
                         }
                         .frame(width: 80)
-                    }
-                }
-
-                Toggle("Auto Picture-in-Picture on tab switch", isOn: $settings.autoPiPEnabled)
-            }
-
-            SettingsCard(header: "Updates") {
-                Toggle("Auto-check for updates", isOn: $settings.autoUpdateEnabled)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Button("Check for Updates") {
-                            updateService.checkForUpdates()
-                        }
-
-                        if updateService.isCheckingForUpdates {
-                            ProgressView()
-                                .scaleEffect(0.5)
-                                .frame(width: 16, height: 16)
-                        }
-
-                        if updateService.updateAvailable {
-                            Text("Update available!")
-                                .foregroundColor(.green)
-                                .font(.caption)
-                        }
-                    }
-
-                    if let result = updateService.lastCheckResult {
-                        Text(result)
-                            .font(.caption)
-                            .foregroundColor(updateService.updateAvailable ? .green : .secondary)
-                    }
-
-                    if let lastCheck = updateService.lastCheckDate {
-                        Text("Last checked: \(lastCheck.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
                     }
                 }
             }

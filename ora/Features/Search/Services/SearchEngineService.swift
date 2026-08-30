@@ -221,16 +221,7 @@ class SearchEngineService: ObservableObject {
         return searchEngines.first(where: { $0.aliases.contains(textLowercased) })
     }
 
-    func getDefaultSearchEngine(for containerId: UUID? = nil) -> SearchEngine? {
-        // First check per-container setting
-        if let containerId,
-           let defaultId = settingsStore.defaultSearchEngineId(for: containerId),
-           let engine = searchEngines.first(where: { $0.name == defaultId })
-        {
-            return engine
-        }
-
-        // Then check global default setting
+    func getDefaultSearchEngine(for _: UUID? = nil) -> SearchEngine? {
         if let globalDefaultId = settingsStore.globalDefaultSearchEngine,
            let engine = searchEngines.first(where: { $0.name == globalDefaultId })
         {
@@ -241,14 +232,7 @@ class SearchEngineService: ObservableObject {
         return searchEngines.first(where: { $0.name == "Google" })
     }
 
-    func getDefaultAIChat(for containerId: UUID? = nil) -> SearchEngine? {
-        if let containerId,
-           let defaultId = settingsStore.defaultAIEngineId(for: containerId),
-           let engine = searchEngines.first(where: { $0.name == defaultId && $0.isAIChat })
-        {
-            return engine
-        }
-
+    func getDefaultAIChat(for _: UUID? = nil) -> SearchEngine? {
         // Fallback to ChatGPT if no custom default is set
         return searchEngines.first(where: { $0.isAIChat && $0.name == "ChatGPT" })
     }
